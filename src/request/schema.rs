@@ -4,11 +4,12 @@ use std::sync::Arc;
 
 use anyhow::anyhow;
 use jsonschema::{JSONSchema, SchemaResolver, SchemaResolverError};
-use log::warn;
+use log::{info, warn};
 use serde_json::{json, Value};
 use url::Url;
 
 pub fn load_schema(schema_dir: &Path) -> JSONSchema {
+    info!("Reading schema from {}", schema_dir.display());
     let schema_json = read_schema(schema_dir);
     compile_schema(&schema_json, schema_dir)
 }
@@ -25,6 +26,7 @@ fn read_json_from_path(path: &Path) -> Value {
 
 fn compile_schema(schema: &Value, schema_dir: &Path) -> JSONSchema {
     let resolver = LocalResolver { schema_dir: PathBuf::from(schema_dir) };
+    info!("Compiling JSON schema");
     JSONSchema::options()
         .with_resolver(resolver)
         .compile(schema)
