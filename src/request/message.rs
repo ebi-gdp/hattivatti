@@ -3,10 +3,10 @@ use std::path::{Path, PathBuf};
 
 use jsonschema::JSONSchema;
 use log::{info, warn};
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use crate::request::read;
 use anyhow::Result;
+use crate::request::job::JobRequest;
 use crate::request::message::MessageError::JSONValidationError;
 
 #[derive(Debug)]
@@ -89,41 +89,4 @@ impl Message {
         serde_json::from_str::<Value>(&json_string)
             .map_err(|_| MessageError::JSONDecodeError)
     }
-}
-
-
-#[derive(Debug, Deserialize, Serialize)]
-pub struct PipelineParam {
-    id: String,
-    target_genomes: Vec<TargetGenome>,
-    nxf_params_file: NxfParamsFile,
-    nxf_work: String,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-struct TargetGenome {
-    pvar: String,
-    pgen: String,
-    psam: String,
-    sampleset: String,
-    chrom: Option<String>,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-struct NxfParamsFile {
-    pgs_id: String,
-    format: String,
-    target_build: String,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-pub struct GlobusDetails {
-    guest_collection_id: String,
-    dir_path_on_guest_collection: String,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-pub struct JobRequest {
-    pub pipeline_param: PipelineParam,
-    pub globus_details: GlobusDetails,
 }

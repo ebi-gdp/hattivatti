@@ -3,7 +3,6 @@ CREATE TABLE IF NOT EXISTS job (
     intervene_id TEXT AS (json_extract(Manifest, '$.pipeline_param.id')) UNIQUE,
     manifest TEXT,
     valid INTEGER,
-    valid_status TEXT,
     submitted INTEGER,
-    created_at TEXT
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );

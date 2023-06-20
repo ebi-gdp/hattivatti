@@ -1,14 +1,14 @@
-use std::fs;
 use std::path::{Path, PathBuf};
 
-use log::{info, warn};
-use serde::{Deserialize, Serialize};
-use serde_json::json;
-
-use clap::Parser;
-use rusqlite::{Connection, OpenFlags};
-use crate::request::message::{JobRequest, Message};
 use anyhow::Result;
+use clap::Parser;
+use log::info;
+use rusqlite::Connection;
+
+use request::job::JobRequest;
+
+use crate::db::job::add_job;
+use crate::request::message::{Message, MessageError};
 
 mod db;
 mod request;
@@ -28,7 +28,7 @@ struct Args {
     #[arg(short, long)]
     message_dir: PathBuf,
     #[arg(short, long)]
-    db_path: String
+    db_path: String,
 }
 
 fn main() {
@@ -37,19 +37,19 @@ fn main() {
 
     let args = Args::parse();
 
-    let conn = db::open::open_db(Path::new( &args.db_path))
+    let conn: Connection = db::open::open_db(Path::new(&args.db_path))
         .expect("Database connection");
 
     let schema = request::schema::load_schema(args.schema_dir.as_path());
 
     let messages: Result<Vec<Message>> = request::message::from_dir(args.message_dir.as_path());
 
-    let mut list: Vec<JobRequest> = Vec::new();
-
     for message in messages.unwrap() {
-        let x: JobRequest = message.read(&schema).unwrap();
-        info!("{:#?}", x.pipeline_param);
+        let job: Result<JobRequest, MessageError> = message.read(&schema);
+        let _ = add_job(&conn, job, message.path.as_path());
     }
+
+    // todo: select messages where valid = 1 and submitted = 0
 
 
     //let x = m.read();
