@@ -3,13 +3,15 @@ use std::path::{Path, PathBuf};
 
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
-use serde_json::{error, Result, Value};
 use serde_json::json;
 
-mod request;
-
 use clap::Parser;
-use crate::request::message::Message;
+use rusqlite::{Connection, OpenFlags};
+use crate::request::message::{JobRequest, Message};
+use anyhow::Result;
+
+mod db;
+mod request;
 
 #[derive(Parser, Debug)]
 #[command(name = "hattivatti")]
@@ -24,7 +26,9 @@ struct Args {
     #[arg(short, long)]
     schema_dir: PathBuf,
     #[arg(short, long)]
-    message_dir: PathBuf
+    message_dir: PathBuf,
+    #[arg(short, long)]
+    db_path: String
 }
 
 fn main() {
@@ -33,44 +37,24 @@ fn main() {
 
     let args = Args::parse();
 
+    let conn = db::open::open_db(Path::new( &args.db_path))
+        .expect("Database connection");
+
     let schema = request::schema::load_schema(args.schema_dir.as_path());
 
-    let m: Message = Message {
-        path: PathBuf::from(Path::new("/Users/bwingfield/Downloads/msgs/invalid_msg.json")),
-        compiled_schema: schema
-    };
+    let messages: Result<Vec<Message>> = request::message::from_dir(args.message_dir.as_path());
 
-    let x = m.read();
-    println!("Valid serde? {:?}", x.is_some());
+    let mut list: Vec<JobRequest> = Vec::new();
+
+    for message in messages.unwrap() {
+        let x: JobRequest = message.read(&schema).unwrap();
+        info!("{:#?}", x.pipeline_param);
+    }
 
 
-    // let valid_message = load_message(false);
-    // let result = schema.validate(&valid_message);
-    //
-    // if let Err(errors) = result {
-    //     for error in errors {
-    //         warn!("Message fails validation");
-    //         warn!("Validation error: {}", error);
-    //         warn!("Instance path: {}", error.instance_path);
-    //     }
-    // } else {
-    //     info!("Message passes validation")
-    // }
+    //let x = m.read();
+    //println!("Valid serde? {:?}", x.is_ok());
 
 
     info!("hattivatti finished")
-}
-
-fn load_message(valid: bool) -> Value {
-    let valid_path = Path::new("/Users/bwingfield/Downloads/msgs/valid_msg.json");
-    let invalid_path = Path::new("/Users/bwingfield/Downloads/msgs/invalid_msg.json");
-    let path = if valid {
-        valid_path
-    } else {
-        invalid_path
-    };
-
-    let string_message = fs::read_to_string(&path).expect("File");
-    let message: Value = serde_json::from_str(&string_message).expect("Valid JSON");
-    return message;
 }

@@ -1,10 +1,13 @@
 use std::fs;
 use std::path::{Path, PathBuf};
+
 use jsonschema::JSONSchema;
 use log::{info, warn};
-use serde_json::Value;
 use serde::{Deserialize, Serialize};
-
+use serde_json::Value;
+use crate::request::read;
+use anyhow::Result;
+use crate::request::message::MessageError::JSONValidationError;
 
 #[derive(Debug)]
 pub enum MessageError {
@@ -15,31 +18,50 @@ pub enum MessageError {
 }
 
 pub struct Message {
-    pub path: PathBuf,
-    pub compiled_schema: JSONSchema,
+    pub path: PathBuf
+}
+
+pub fn from_dir(dir: &Path) -> Result<Vec<Message>> {
+    let mut list: Vec<Message> = Vec::new();
+
+    let paths= read::get_message_paths(dir)?;
+
+    for path in paths {
+        let m = Message { path };
+        list.push(m);
+    }
+
+    Ok(list)
 }
 
 impl Message {
-    pub fn read(&self) -> Result<JobRequest, MessageError> {
+    pub fn read(&self, schema: &JSONSchema) -> Result<JobRequest, MessageError> {
         let json: Value = self.parse_untyped_json()?;
 
-        match self.validate(&json) {
+        match self.validate(&json, schema) {
             Ok(_) => {
                 info!("Message is valid");
                 self.parse_json(json)
             }
             Err(err) => {
                 warn!("Message fails validation");
+                warn!("{:?}", err);
                 Err(err)
             }
         }
     }
 
-    fn validate(&self, json_string: &Value) -> Result<(), MessageError> {
-        info!("Validating raw message against JSON schema");
-        match self.compiled_schema.validate(json_string) {
+    fn validate(&self, json_string: &Value, schema: &JSONSchema) -> Result<(), MessageError> {
+        info!("Validating raw message against JSON validate");
+        match schema.validate(json_string) {
             Ok(_) => Ok(()),
-            Err(_) => Err(MessageError::JSONValidationError),
+            Err(errors) => {
+                for error in errors {
+                    warn!("Validation error: {}", error);
+                    warn!("Instance path: {}", error.instance_path);
+                }
+                Err(JSONValidationError)
+            }
         }
     }
 
@@ -62,6 +84,7 @@ impl Message {
     fn parse_untyped_json(&self) -> Result<Value, MessageError> {
         info!("Parsing JSON into untyped structure");
         let json_string = self.read_file()?;
+        info!("{}", json_string);
         // from_value is a generic function, so request Value (generic json) specifically
         serde_json::from_str::<Value>(&json_string)
             .map_err(|_| MessageError::JSONDecodeError)
@@ -70,7 +93,7 @@ impl Message {
 
 
 #[derive(Debug, Deserialize, Serialize)]
-struct PipelineParam {
+pub struct PipelineParam {
     id: String,
     target_genomes: Vec<TargetGenome>,
     nxf_params_file: NxfParamsFile,
@@ -94,13 +117,13 @@ struct NxfParamsFile {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-struct GlobusDetails {
+pub struct GlobusDetails {
     guest_collection_id: String,
     dir_path_on_guest_collection: String,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct JobRequest {
-    pipeline_param: PipelineParam,
-    globus_details: GlobusDetails,
+    pub pipeline_param: PipelineParam,
+    pub globus_details: GlobusDetails,
 }

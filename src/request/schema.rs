@@ -4,8 +4,8 @@ use std::sync::Arc;
 
 use anyhow::anyhow;
 use jsonschema::{JSONSchema, SchemaResolver, SchemaResolverError};
-use log::{info, warn};
-use serde_json::{json, Value};
+use log::{info};
+use serde_json::{Value};
 use url::Url;
 
 pub fn load_schema(schema_dir: &Path) -> JSONSchema {
@@ -34,8 +34,8 @@ fn compile_schema(schema: &Value, schema_dir: &Path) -> JSONSchema {
 }
 
 /*
-Set up a resolver that will work with local JSON schema
-The local schema contain relative references to local files in the same directory
+Set up a resolver that will work with local JSON validate
+The local validate contain relative references to local files in the same directory
 In the future we should change to online schemas with absolute references
 */
 struct LocalResolver {
