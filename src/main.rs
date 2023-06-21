@@ -23,6 +23,7 @@ mod slurm;
 "This program reads job request messages from the INTERVENE backend and submits a sensitive data
 processing task to the SLURM scheduler. The program also monitors the state of submitted jobs,
 and notifies the INTERVENE backend when a requested job has succeeded or failed.")]
+
 struct Args {
     #[arg(short, long)]
     schema_dir: PathBuf,
@@ -34,12 +35,14 @@ struct Args {
     work_dir: PathBuf
 }
 
+pub struct WorkingDirectory { path: PathBuf }
+
 fn main() {
     env_logger::init();
     info!("terve! starting up :)");
 
     let args = Args::parse();
-
+    let wd = WorkingDirectory { path: args.work_dir };
     let conn: Connection = db::open::open_db(Path::new(&args.db_path))
         .expect("Database connection");
 
@@ -56,7 +59,7 @@ fn main() {
     info!("{:?}", jobs);
 
     for job in jobs {
-        let _ = create_job(job);
+        let _ = create_job(job, &wd);
     }
 
 

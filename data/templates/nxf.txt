@@ -1,0 +1,16 @@
+# step 0. load required modules
+module load nextflow/22.10.1
+
+# step 1: transfer data using HTTPS + curl
+# (assume transfer.sh is on PATH)
+transfer.sh {work_dir}
+
+# step 2. run pgsc_calc!
+nextflow run pgscatalog/pgsc_calc -profile test,singularity \
+         -c {work_dir}/{name}/config \
+         -c {work_dir}/{name}/allas.config \
+         --input {work_dir}/{name}/input.json \
+         --min_overlap 0.01 \
+         --max_cpus 40 \
+         --max_memory "32.GB" \
+         --parallel

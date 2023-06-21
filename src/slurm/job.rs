@@ -2,25 +2,33 @@ use std::fs::OpenOptions;
 use std::io;
 use std::io::Write;
 use std::path::Path;
+
 use log::info;
-use tinytemplate::TinyTemplate;
-use crate::slurm::job_request::{JobRequest, NxfParamsFile, PipelineParam};
 use serde::Serialize;
 use serde_json::Value;
 use tinytemplate::error::Error;
+use tinytemplate::TinyTemplate;
 
-pub fn create_job(request: JobRequest) {
+use chrono::Utc;
+
+use crate::slurm::job_request::{JobRequest, NxfParamsFile, PipelineParam};
+use crate::WorkingDirectory;
+
+pub fn create_job(request: JobRequest, wd: &WorkingDirectory) {
     info!("Creating job {}", &request.pipeline_param.id);
     let header: Header = render_header(&request.pipeline_param);
-    let vars: EnvVars = get_environment_variables(&request);
-    let job = JobTemplate { header, vars };
+    let vars: EnvVars = render_environment_variables(&request);
+    let workflow: Workflow = render_nxf(&request.pipeline_param, &wd.path);
+    let job = JobTemplate { header, vars, workflow };
     job.write(Path::new("/Users/bwingfield/Downloads/test.txt")).expect("out");
+
     let _ = make_input_file(&request.pipeline_param.nxf_params_file);
 }
 
 struct JobTemplate {
     header: Header,
     vars: EnvVars,
+    workflow: Workflow,
 }
 
 impl JobTemplate {
@@ -30,7 +38,7 @@ impl JobTemplate {
             .append(true)
             .open(out_path)?;
 
-        [self.header.content, self.vars.content].map(
+        [self.header.content, self.vars.content, self.workflow.content].map(
             |str| {
                 file.write_all(str.as_bytes());
             }
@@ -41,25 +49,37 @@ impl JobTemplate {
 }
 
 struct Header {
-    content: String
+    content: String,
 }
 
 struct EnvVars {
-    content: String
+    content: String,
+}
+
+struct Workflow {
+    content: String,
 }
 
 #[derive(Serialize)]
 struct HeaderContext {
     name: String,
-    time: String
+    job_time: String,
+    time_now: String
 }
 
 #[derive(Serialize)]
 struct EnvVarContext {
     globus_base_url: String,
     guest_collection_id: String,
-    message: String
+    message: String,
 }
+
+#[derive(Serialize)]
+struct NextflowContext {
+    name: String,
+    work_dir: String,
+}
+
 
 fn render_header(param: &PipelineParam) -> Header {
     static HEADER: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/data/templates/header.txt"));
@@ -69,16 +89,17 @@ fn render_header(param: &PipelineParam) -> Header {
     let context = HeaderContext {
         name: param.id.to_string(),
         // (todo: run job for 1 hour)
-        time: "01:00:00".to_string()
+        job_time: "01:00:00".to_string(),
+        time_now: Utc::now().to_string()
     };
 
     Header { content: tt.render("header", &context).expect("Rendered document") }
 }
 
-fn get_environment_variables(request: &JobRequest) -> EnvVars {
+fn render_environment_variables(request: &JobRequest) -> EnvVars {
     static ENV_VARS: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/data/templates/env_vars.txt"));
     let mut tt = TinyTemplate::new();
-    // html escape breaks JSON 
+    // html escape breaks JSON
     tt.set_default_formatter(&tinytemplate::format_unescaped);
     tt.add_template("env_var", ENV_VARS).expect("Template");
 
@@ -90,12 +111,19 @@ fn get_environment_variables(request: &JobRequest) -> EnvVars {
     EnvVars { content: tt.render("env_var", &context).expect("Rendered document") }
 }
 
-fn render_nxf(param: &PipelineParam) {
 
+fn render_nxf(param: &PipelineParam, work_dir: &Path) -> Workflow {
+    static NXF: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/data/templates/nxf.txt"));
+    let mut tt = TinyTemplate::new();
+    tt.add_template("nxf", NXF).expect("Template");
+    let name: &String = &param.id;
+    let wd = work_dir.to_str().expect("path").to_string();
+    let context = NextflowContext { name: name.clone(), work_dir: wd };
+    Workflow { content: tt.render("nxf", &context).expect("Rendered document") }
 }
 
 struct AllasConfig {
-    content: String
+    content: String,
 }
 
 fn allas_config() -> AllasConfig {
