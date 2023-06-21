@@ -1,14 +1,15 @@
+use std::io;
 use std::path::{Path, PathBuf};
 
-use anyhow::Result;
 use clap::Parser;
 use log::info;
 use rusqlite::Connection;
+use serde::de::Error;
 
 use request::job::JobRequest;
 
 use crate::db::job::add_job;
-use crate::request::message::{Message, MessageError};
+use crate::request::message::Message;
 
 mod db;
 mod request;
@@ -42,10 +43,10 @@ fn main() {
 
     let schema = request::schema::load_schema(args.schema_dir.as_path());
 
-    let messages: Result<Vec<Message>> = request::message::from_dir(args.message_dir.as_path());
+    let messages: Result<Vec<Message>, io::Error> = request::message::from_dir(args.message_dir.as_path());
 
     for message in messages.unwrap() {
-        let job: Result<JobRequest, MessageError> = message.read(&schema);
+        let job: Result<(), io::Error> = message.read(&schema);
         let _ = add_job(&conn, job, message.path.as_path());
     }
 

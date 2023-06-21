@@ -1,30 +1,19 @@
-use std::fs;
+use std::{fs, io};
+use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
 use jsonschema::JSONSchema;
 use log::{info, warn};
 use serde_json::Value;
-use crate::request::read;
-use anyhow::Result;
-use crate::request::job::JobRequest;
-use crate::request::message::MessageError::JSONValidationError;
-
-#[derive(Debug)]
-pub enum MessageError {
-    JSONValidationError,
-    JSONDecodeError,
-    DeserialisationError,
-    MessageReadError,
-}
 
 pub struct Message {
-    pub path: PathBuf
+    pub path: PathBuf,
 }
 
-pub fn from_dir(dir: &Path) -> Result<Vec<Message>> {
+pub fn from_dir(dir: &Path) -> Result<Vec<Message>, io::Error> {
     let mut list: Vec<Message> = Vec::new();
 
-    let paths= read::get_message_paths(dir)?;
+    let paths = get_message_paths(dir)?;
 
     for path in paths {
         let m = Message { path };
@@ -35,13 +24,13 @@ pub fn from_dir(dir: &Path) -> Result<Vec<Message>> {
 }
 
 impl Message {
-    pub fn read(&self, schema: &JSONSchema) -> Result<JobRequest, MessageError> {
+    pub fn read(&self, schema: &JSONSchema) -> Result<(), io::Error> {
         let json: Value = self.parse_untyped_json()?;
 
         match self.validate(&json, schema) {
             Ok(_) => {
                 info!("Message is valid");
-                self.parse_json(json)
+                Ok(())
             }
             Err(err) => {
                 warn!("Message fails validation");
@@ -51,7 +40,7 @@ impl Message {
         }
     }
 
-    fn validate(&self, json_string: &Value, schema: &JSONSchema) -> Result<(), MessageError> {
+    fn validate(&self, json_string: &Value, schema: &JSONSchema) -> Result<(), io::Error> {
         info!("Validating raw message against JSON validate");
         match schema.validate(json_string) {
             Ok(_) => Ok(()),
@@ -60,33 +49,29 @@ impl Message {
                     warn!("Validation error: {}", error);
                     warn!("Instance path: {}", error.instance_path);
                 }
-                Err(JSONValidationError)
+                let err = io::Error::new(ErrorKind::Other, "JSON validation error");
+                Err(err)
             }
         }
     }
 
-    fn read_file(&self) -> Result<String, MessageError> {
+    fn read_file(&self) -> Result<String, io::Error> {
         let path: &Path = self.path.as_path();
         info!("Reading message at {}", path.display());
-        fs::read_to_string(path).map_err(|err| {
-            warn!("Can't read message job request at path {}: {}", path.display(), err);
-            MessageError::MessageReadError
-        })
+        let contents = fs::read_to_string(path)?;
+        Ok(contents)
     }
 
-    fn parse_json(&self, value: Value) -> Result<JobRequest, MessageError> {
-        info!("Deserialising valid JSON into typed Rust object");
-        // from_value is a generic function, so request JobRequest specifically
-        serde_json::from_value::<JobRequest>(value)
-            .map_err(|_| MessageError::DeserialisationError)
-    }
-
-    fn parse_untyped_json(&self) -> Result<Value, MessageError> {
-        info!("Parsing JSON into untyped structure");
+    fn parse_untyped_json(&self) -> Result<Value, io::Error> {
         let json_string = self.read_file()?;
-        info!("{}", json_string);
-        // from_value is a generic function, so request Value (generic json) specifically
-        serde_json::from_str::<Value>(&json_string)
-            .map_err(|_| MessageError::JSONDecodeError)
+        info!("Parsing JSON into untyped structure: {}", json_string);
+        let value: Value = serde_json::from_str(&json_string)?;
+        Ok(value)
     }
+}
+
+fn get_message_paths(dir: &Path) -> Result<Vec<PathBuf>, io::Error> {
+    fs::read_dir(dir)?
+        .map(|res| res.map(|e| e.path()))
+        .collect::<Result<Vec<PathBuf>, io::Error>>()
 }
