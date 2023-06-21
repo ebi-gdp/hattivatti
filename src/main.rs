@@ -4,15 +4,15 @@ use std::path::{Path, PathBuf};
 use clap::Parser;
 use log::info;
 use rusqlite::Connection;
-use serde::de::Error;
 
-use request::job::JobRequest;
-
-use crate::db::job::add_job;
+use crate::db::load::message::load_message;
+use crate::db::submit::load::get_valid_jobs;
 use crate::request::message::Message;
+use crate::slurm::job::create_job;
 
 mod db;
 mod request;
+mod slurm;
 
 #[derive(Parser, Debug)]
 #[command(name = "hattivatti")]
@@ -30,6 +30,8 @@ struct Args {
     message_dir: PathBuf,
     #[arg(short, long)]
     db_path: String,
+    #[arg(short, long)]
+    work_dir: PathBuf
 }
 
 fn main() {
@@ -47,10 +49,15 @@ fn main() {
 
     for message in messages.unwrap() {
         let job: Result<(), io::Error> = message.read(&schema);
-        let _ = add_job(&conn, job, message.path.as_path());
+        let _ = load_message(&conn, job, message.path.as_path());
     }
 
-    // todo: select messages where valid = 1 and submitted = 0
+    let jobs = get_valid_jobs(&conn).unwrap();
+    info!("{:?}", jobs);
+
+    for job in jobs {
+        let _ = create_job(job);
+    }
 
 
     //let x = m.read();

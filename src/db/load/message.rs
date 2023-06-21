@@ -2,11 +2,10 @@ use std::{fs, io};
 use std::path::Path;
 use log::{info, warn};
 use rusqlite::Connection;
-use crate::request::job::JobRequest;
 use anyhow::Result;
 
-// once a message is read, start
-pub fn add_job(conn: &Connection, job: Result<(), io::Error>, path: &Path) -> Result<()> {
+// load all messages into the database
+pub fn load_message(conn: &Connection, job: Result<(), io::Error>, path: &Path) -> Result<()> {
     info!("Adding job to db");
     // read raw message content again to store in db
     let json: String = fs::read_to_string(path)?;

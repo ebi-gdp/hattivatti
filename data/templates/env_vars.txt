@@ -1,0 +1,7 @@
+export NXF_OPTS="-Xms500M -Xmx4G"
+export NXF_ANSI_TERM=false
+export NXF_EXECUTOR=local
+export NXF_WORK=$TMPDIR/work
+export GLOBUS_BASE_URL={globus_base_url}
+export GLOBUS_GUEST_COLLECTION_ID={guest_collection_id}
+export JOB_MESSAGE="{message}"
