@@ -1,16 +1,40 @@
-# step 0. load required modules
+
+# time to start doing work!
+
+# step 0. load dependencies
+# (curl, jq, and singularity/apptainer are preloaded on Puhti)
 module load nextflow/22.10.1
+
+# the job _must be_ scheduled on a node with local storage
+# it's cleaned up by the system after the job finishes
+# can't use --chdir, $TMPDIR is set when the job starts
+cd $TMPDIR
 
 # step 1: transfer data using HTTPS + curl
 # (assume transfer.sh is on PATH)
-transfer.sh {work_dir}
+# just dumps files into current working directory
+transfer.sh
 
-# step 2. run pgsc_calc!
-nextflow run pgscatalog/pgsc_calc -profile test,singularity \
-         -c {work_dir}/{name}/config \
+# step 2: run pgsc_calc and calculate some scores
+nextflow run {pgsc_calc_dir} -profile singularity \
          -c {work_dir}/{name}/allas.config \
+         -params-file {work_dir}/{name}/params.json \
          --input {work_dir}/{name}/input.json \
+         --outdir s3://intervene-dev/{name} \
          --min_overlap 0.01 \
          --max_cpus 40 \
          --max_memory "32.GB" \
-         --parallel
+         --parallel 
+
+# step 3: report job status to INTERVENE platform
+# (automatically executed in callback_exit_handler by trap)
+
+# ------------------------------------------------------------------------------
+
+cat << EOF
+
+    |\__/,|   (`\
+  _.|o o  |_   ) )
+-(((---(((--------
+
+EOF

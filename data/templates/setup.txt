@@ -1,2 +1,0 @@
-set -euxo pipefail
-module load nextflow/22.10.1

@@ -1,4 +1,4 @@
-use std::io;
+use std::{fs, io};
 use std::path::{Path, PathBuf};
 
 use clap::Parser;
@@ -43,6 +43,8 @@ fn main() {
 
     let args = Args::parse();
     let wd = WorkingDirectory { path: args.work_dir };
+    fs::create_dir_all(&wd.path).expect("Can't create working directory");
+
     let conn: Connection = db::open::open_db(Path::new(&args.db_path))
         .expect("Database connection");
 

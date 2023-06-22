@@ -1,9 +1,16 @@
-# these variables shouldn't be sensitive
+# set up environment variables
+# secrets are inherited from parent environment (hattivatti deployment)
+
+# nextflow configuration
 export NXF_OPTS="-Xms500M -Xmx4G"
 export NXF_ANSI_TERM=false
 export NXF_EXECUTOR=local
 export NXF_WORK=$TMPDIR/work
+export NXF_HOME=$TMPDIR/home
+export CAPSULE_LOG=none
+# transfer.sh configuration
 export GLOBUS_BASE_URL={globus_base_url}
 export GLOBUS_GUEST_COLLECTION_ID={guest_collection_id}
-export JOB_MESSAGE="{message}"
+export JOB_MESSAGE='{message}'
 
+# ------------------------------------------------------------------------------

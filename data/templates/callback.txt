@@ -1,0 +1,29 @@
+
+# set up reporting job status to INTERVENE backend
+
+# need to escape starting curly bracket to prevent templating error
+# (the comment above only makes sense in the original template file)
+callback_exit_handler() \{
+  # report the status of the job to the INTERVENE backend
+  exit_code=$?
+
+  # todo: don't change the url, change the message content
+  if [ $exit_code -eq 0 ]; then
+    url="http://example.com/good/{name}"
+  else
+    url="http://example.com/bad/{name}"
+  fi
+
+  # do a callback
+  curl -s "$url"
+
+  exit $exit_code
+}
+
+# run everything in "strict mode". error early, error often!
+set -euxo pipefail
+
+trap callback_exit_handler EXIT
+
+# ------------------------------------------------------------------------------
+
