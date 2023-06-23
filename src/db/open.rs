@@ -1,14 +1,13 @@
-use std::path::Path;
+use log::info;
+use crate::WorkingDirectory;
 
-use anyhow::Result;
-use rusqlite::{Connection, OpenFlags};
+pub fn open_db(wd: &WorkingDirectory) -> rusqlite::Result<rusqlite::Connection> {
+    let path = &wd.path.join("hattivatti.db");
+    if !path.exists() { info!("Creating new database {}", path.display()) }
+    let conn = rusqlite::Connection::open(&path)?;
 
-pub fn open_db(path: &Path) -> Result<Connection> {
-    // open flags changed to error if database doesn't exist
-    let db = Connection::open_with_flags(path,
-                                         OpenFlags::SQLITE_OPEN_READ_WRITE
-                                             | OpenFlags::SQLITE_OPEN_URI
-                                             | OpenFlags::SQLITE_OPEN_NO_MUTEX)?;
-    return Ok(db);
+    static SCHEMA: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/data/db/schema.sql"));
+    conn.execute(SCHEMA, [], )?;
+
+    Ok(conn)
 }
-

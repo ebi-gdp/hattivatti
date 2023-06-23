@@ -3,19 +3,22 @@ use rusqlite::Connection;
 use serde_json::Result as JsonResult;
 use crate::slurm::job_request::JobRequest;
 
-pub fn get_valid_jobs(conn: &Connection) -> Result<Vec<JobRequest>, rusqlite::Error> {
-    let mut stmt = conn.prepare("SELECT manifest FROM job WHERE valid == 1 AND submitted == 0")?;
-    let rows = stmt.query_map([], |row| row.get(0))?;
+pub fn get_valid_jobs(conn: &Connection) -> Option<Vec<JobRequest>> {
+    let mut stmt = conn.prepare("SELECT manifest FROM job WHERE valid == 1 AND staged == 0 AND submitted == 0").expect("");
+    let rows = stmt.query_map([], |row| row.get(0)).expect("");
 
     let mut json: Vec<String> = Vec::new();
     for row in rows {
-        let json_string: String = row?;
+        let json_string: String = row.expect("");
         info!("Loading valid job from db: {} ...", &json_string[..50]);
         json.push(json_string);
     }
 
     let jobs = deserialise(json).expect("Deserialised JSON");
-    Ok(jobs)
+    match jobs.is_empty() {
+        true => { None }
+        false => { Some(jobs) }
+    }
 }
 
 fn deserialise(json_strings: Vec<String>) -> JsonResult<Vec<JobRequest>> {

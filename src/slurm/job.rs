@@ -6,26 +6,26 @@ use std::path::Path;
 use chrono::Utc;
 use log::info;
 use serde::Serialize;
-use serde_json::Value;
-use tinytemplate::error::Error;
 use tinytemplate::TinyTemplate;
 
 use crate::slurm::job_request::{JobRequest, NxfParamsFile, PipelineParam, TargetGenome};
 use crate::WorkingDirectory;
 
-pub fn create_job(request: JobRequest, wd: &WorkingDirectory) {
-    let instance_wd = WorkingDirectory { path: wd.path.join(&request.pipeline_param.id) };
-    info!("Creating job {} in working directory {}", &request.pipeline_param.id, &instance_wd.path.display());
-    fs::create_dir(&instance_wd.path).expect("Can't create working directory");
-    let header: Header = render_header(&request.pipeline_param);
-    let callback: Callback = render_callback(&request.pipeline_param);
-    let vars: EnvVars = render_environment_variables(&request);
-    let workflow: Workflow = render_nxf(&request.pipeline_param, &wd.path);
-    let job = JobTemplate { header, callback, vars, workflow };
-    job.write(&instance_wd.path.join("job.sh")).expect("Can't write job script");
-    write_samplesheet(&request.pipeline_param, &instance_wd);
-    write_config(&request.pipeline_param.nxf_params_file, &instance_wd);
-    write_allas(&instance_wd);
+impl JobRequest {
+    pub fn create_job(&self, wd: &WorkingDirectory) {
+        let instance_wd = WorkingDirectory { path: wd.path.join(&&self.pipeline_param.id) };
+        info!("Creating job {} in working directory {}", &&self.pipeline_param.id, &instance_wd.path.display());
+        fs::create_dir(&instance_wd.path).expect("Can't create working directory");
+        let header: Header = render_header(&&self.pipeline_param);
+        let callback: Callback = render_callback(&&self.pipeline_param);
+        let vars: EnvVars = render_environment_variables(&&self);
+        let workflow: Workflow = render_nxf(&&self.pipeline_param, &wd.path);
+        let job = JobTemplate { header, callback, vars, workflow };
+        job.write(&instance_wd.path.join("job.sh")).expect("Can't write job script");
+        write_samplesheet(&&self.pipeline_param, &instance_wd);
+        write_config(&&self.pipeline_param.nxf_params_file, &instance_wd);
+        write_allas(&instance_wd);
+    }
 }
 
 struct JobTemplate {
