@@ -56,9 +56,6 @@ async fn main() {
 
     if let Some(messages) = messages {
         for message in messages {
-            // todo: check result of loading before deleting
-            // todo: rollback insertions and updates with dry run
-            // todo: prevent deletion with dry run
             let _ = ingest_message(&conn, &message);
 
             if !args.dry_run {
@@ -75,9 +72,11 @@ async fn main() {
 
     if let Some(jobs) = jobs {
         for job in jobs {
-            job.create_job(&wd);
+            let job_path = job.create(&wd);
             if !args.dry_run {
                 job.stage(&conn);
+                // todo: sbatch this path
+                info!("{}", job_path.path.display())
             } else {
                 info!("--dry-run set, not submitting job to slurm");
             }

@@ -1,7 +1,7 @@
 use std::{fs, io};
 use std::fs::OpenOptions;
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use chrono::Utc;
 use log::{info, warn};
@@ -11,8 +11,10 @@ use tinytemplate::TinyTemplate;
 use crate::slurm::job_request::{JobRequest, NxfParamsFile, PipelineParam, TargetGenome};
 use crate::WorkingDirectory;
 
+pub struct JobPath { pub path: PathBuf }
+
 impl JobRequest {
-    pub fn create_job(&self, wd: &WorkingDirectory) {
+    pub fn create(&self, wd: &WorkingDirectory) -> JobPath {
         let instance_wd = WorkingDirectory { path: wd.path.join(&&self.pipeline_param.id) };
         info!("Creating job {} in working directory {}", &&self.pipeline_param.id, &instance_wd.path.display());
 
@@ -28,10 +30,13 @@ impl JobRequest {
         let workflow: Workflow = render_nxf(&&self.pipeline_param, &wd.path);
         let job = JobTemplate { header, callback, vars, workflow };
 
-        job.write(&instance_wd.path.join("job.sh")).expect("Can't write job script");
+        let path = &instance_wd.path.join("job.sh");
+        job.write(path).expect("Can't write job script");
         write_samplesheet(&&self.pipeline_param, &instance_wd);
         write_config(&&self.pipeline_param.nxf_params_file, &instance_wd);
         write_allas(&instance_wd);
+
+        JobPath { path: path.clone() }
     }
 }
 
