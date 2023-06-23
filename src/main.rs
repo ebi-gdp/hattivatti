@@ -29,7 +29,7 @@ struct Args {
     /// A directory where hattivatti can store jobs before submitting them to the SLURM scheduler
     #[arg(short, long)]
     work_dir: PathBuf,
-    /// TODO: Read messages from the queue and create SLURM job files, but don't submit them to the SLURM scheduler
+    /// Read messages from the queue and create SLURM job files, but don't submit them to the SLURM scheduler
     #[arg(long)]
     dry_run: bool
 }
@@ -60,21 +60,26 @@ async fn main() {
             // todo: rollback insertions and updates with dry run
             // todo: prevent deletion with dry run
             let _ = ingest_message(&conn, &message);
-            message.delete(&s3_client).await;
+
+            if !args.dry_run {
+                message.delete(&s3_client).await;
+            } else {
+                info!("--dry-run set, not deleting message in queue");
+            }
         }
     } else {
         info!("No new jobs in queue");
     }
 
-    let jobs: Option<Vec<JobRequest>> = get_valid_jobs(&conn);
+    let jobs: Option<Vec<JobRequest>> = get_valid_jobs(&conn, args.dry_run);
 
     if let Some(jobs) = jobs {
         for job in jobs {
             job.create_job(&wd);
-            job.stage(&conn);
             if !args.dry_run {
-                // submit to slurm
-
+                job.stage(&conn);
+            } else {
+                info!("--dry-run set, not submitting job to slurm");
             }
         }
     } else {

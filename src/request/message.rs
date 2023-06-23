@@ -35,6 +35,7 @@ pub struct AllasMessage {
 pub async fn fetch_all(s3_client: &rusoto_s3::S3Client, schema: &JSONSchema) -> Option<Vec<AllasMessage>> {
     let bucket = "intervene-dev";
     let prefix = "job-queue";
+    info!("Checking Allas queue {bucket}/{prefix} for new messages");
 
     let list_request = rusoto_s3::ListObjectsV2Request {
         bucket: bucket.into(),
@@ -52,11 +53,12 @@ pub async fn fetch_all(s3_client: &rusoto_s3::S3Client, schema: &JSONSchema) -> 
     match objects {
         None => { return None; }
         Some(objects) => {
+            info!("Found new messages in queue");
             for object in objects {
                 let key = object.key.unwrap();
                 info!("Object key: {}", key);
                 let content = read_job(&s3_client, bucket, &key).await;
-                info!("Object content: {content}");
+                // info!("Object content: {content}");
                 jobs.push(AllasMessage::new(content,
                                             bucket.to_string(),
                                             key,
@@ -95,7 +97,10 @@ async fn read_job(s3_client: &rusoto_s3::S3Client, bucket: &str, key: &String) -
 fn validate_message(json_string: &Value, schema: &JSONSchema) -> Result<(), io::Error> {
     info!("Validating message against JSON schema");
     match schema.validate(json_string) {
-        Ok(_) => Ok(()),
+        Ok(_) => {
+            info!("Message is valid");
+            Ok(())
+        },
         Err(errors) => {
             for error in errors {
                 warn!("Validation error: {}", error);

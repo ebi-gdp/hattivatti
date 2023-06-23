@@ -4,7 +4,7 @@ use std::io::Write;
 use std::path::Path;
 
 use chrono::Utc;
-use log::info;
+use log::{info, warn};
 use serde::Serialize;
 use tinytemplate::TinyTemplate;
 
@@ -15,12 +15,19 @@ impl JobRequest {
     pub fn create_job(&self, wd: &WorkingDirectory) {
         let instance_wd = WorkingDirectory { path: wd.path.join(&&self.pipeline_param.id) };
         info!("Creating job {} in working directory {}", &&self.pipeline_param.id, &instance_wd.path.display());
-        fs::create_dir(&instance_wd.path).expect("Can't create working directory");
+
+        if instance_wd.path.exists() {
+            warn!("Job directory already exists, files will be overwritten");
+            fs::remove_dir_all(&instance_wd.path).expect("Delete existing directory");
+        }
+        fs::create_dir(&instance_wd.path).expect("Create working directory");
+
         let header: Header = render_header(&&self.pipeline_param);
         let callback: Callback = render_callback(&&self.pipeline_param);
         let vars: EnvVars = render_environment_variables(&&self);
         let workflow: Workflow = render_nxf(&&self.pipeline_param, &wd.path);
         let job = JobTemplate { header, callback, vars, workflow };
+
         job.write(&instance_wd.path.join("job.sh")).expect("Can't write job script");
         write_samplesheet(&&self.pipeline_param, &instance_wd);
         write_config(&&self.pipeline_param.nxf_params_file, &instance_wd);
@@ -42,11 +49,16 @@ impl JobTemplate {
             .append(true)
             .open(out_path)?;
 
-        [self.header.content, self.callback.content, self.vars.content, self.workflow.content].map(
-            |str| {
-                file.write_all(str.as_bytes()).expect("Can't write job");
-            }
-        );
+        let contents = [
+            self.header.content,
+            self.callback.content,
+            self.vars.content,
+            self.workflow.content,
+        ];
+
+        for content in contents.iter() {
+            file.write_all(content.as_bytes())?;
+        }
 
         Ok(())
     }

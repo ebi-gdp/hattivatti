@@ -9,5 +9,8 @@ pub fn open_db(wd: &WorkingDirectory) -> rusqlite::Result<rusqlite::Connection> 
     static SCHEMA: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/data/db/schema.sql"));
     conn.execute(SCHEMA, [], )?;
 
+    info!("Creating dry run save point");
+    conn.execute("SAVEPOINT dry_run", []).expect("Start transaction");
+
     Ok(conn)
 }
