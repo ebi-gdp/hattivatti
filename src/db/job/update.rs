@@ -1,3 +1,4 @@
+use std::path::Path;
 use std::process::Command;
 use log::info;
 use rusqlite::Connection;
@@ -25,7 +26,7 @@ impl JobRequest {
         info!("Updating {id} with slurm ID {slurm_id}");
         conn
             .execute("UPDATE job SET slurm_id = ? WHERE intervene_id = ?",
-            &[&id, &slurm_id])
+            &[&slurm_id, &id])
             .expect("Update");
 
         Ok(())
@@ -44,13 +45,16 @@ impl JobRequest {
     }
 
     fn run_sbatch(&self, job_path: JobPath) -> String {
-        let wd = job_path.path.parent().unwrap().to_str().unwrap();
+        let wd = job_path.path.parent().unwrap();
+        let output_path = wd.join(Path::new("%j.out"));
+        let output_str = output_path.to_str().unwrap();
+        info!("Output path: {output_str}");
         let job_script_path = job_path.path.to_str().unwrap();
-        let arguments = vec!["--parsable", job_script_path];
 
-        let mut sbatch = Command::new("/usr/bin/sbatch");
+        let arguments = vec!["--parsable", "--output", output_str, job_script_path];
+
+        let mut sbatch = Command::new("sbatch");
         let cmd = sbatch.args(&arguments);
-        info!("Running sbatch process ");
         info!("{:?}", &cmd);
         let output = cmd.output().expect("failed to execute process").stdout;
 
