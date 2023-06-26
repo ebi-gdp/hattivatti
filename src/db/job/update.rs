@@ -44,17 +44,16 @@ impl JobRequest {
     }
 
     fn run_sbatch(&self, job_path: JobPath) -> String {
-        let wd = job_path.path.parent().unwrap();
-        let output = Command::new("sbatch")
-            .arg("--parsable")
-            .arg("--output")
-            .arg(wd)
-            .arg("--error")
-            .arg(wd)
-            .arg(job_path.path)
-            .output()
-            .expect("sbatch");
+        let wd = job_path.path.parent().unwrap().to_str().unwrap();
+        let job_script_path = job_path.path.to_str().unwrap();
+        let arguments = vec!["--parsable", "--output", wd, "--error", wd, job_script_path];
 
-        String::from_utf8(output.stdout).expect("job id")
+        let mut sbatch = Command::new("sbatch");
+        let cmd = sbatch.args(&arguments);
+        info!("Running sbatch process ");
+        info!("{:?}", &cmd);
+        let output = cmd.output().expect("failed to execute process").stdout;
+
+        String::from_utf8(output).expect("job id")
     }
 }
