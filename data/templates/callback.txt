@@ -8,18 +8,17 @@ callback_exit_handler() \{
   exit_code=$?
 
   if [ $exit_code -eq 0 ]; then
-  body='\{"status": "COMPLETED",
-          "pipelineId": "{name}",
-          "outdir": ""}'
+      body='\{"status": "COMPLETED", "pipelineId": "{name}", "outdir": ""}'
   else
-  body='\{"status": "FAILED",
-          "pipelineId": "{name}",
-          "outdir": ""}'
+      body='\{"status": "FAILED", "pipelineId": "{name}", "outdir": ""}'
   fi
 
   # do a callback
-  url="https://dev.intervenegeneticscores.org/pipeline-manager/pipeline/csc/notify"  
-  curl -X POST -H "Authorization: Bearer $CALLBACK_TOKEN" -d $body $url
+  url="https://dev.intervenegeneticscores.org/pipeline-manager/pipeline/csc/notify"
+  # escaping json is a pain
+  echo $body > callback.txt
+
+  curl -X POST -H "Content-Type: application/json" -H "Authorization: Bearer $CALLBACK_TOKEN" --data @callback.txt $url
 
   exit $exit_code
 }

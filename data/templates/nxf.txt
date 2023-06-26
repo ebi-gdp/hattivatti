@@ -30,11 +30,3 @@ nextflow run {pgsc_calc_dir} -profile singularity \
 # (automatically executed in callback_exit_handler by trap)
 
 # ------------------------------------------------------------------------------
-
-cat << EOF
-
-    |\__/,|   (`\
-  _.|o o  |_   ) )
--(((---(((--------
-
-EOF
