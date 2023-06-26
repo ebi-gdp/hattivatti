@@ -1,4 +1,4 @@
-FROM --platform=linux/amd64 rust:bookworm AS build
+FROM --platform=linux/amd64 rust:buster AS build
 
 WORKDIR /opt/build
 
@@ -6,7 +6,7 @@ COPY . ./
 
 RUN cargo build --target x86_64-unknown-linux-gnu
 
-FROM --platform=linux/amd64 debian:stable-slim
+FROM --platform=linux/amd64 debian:buster-slim
 
 RUN apt-get update && apt-get install -y ca-certificates
 
