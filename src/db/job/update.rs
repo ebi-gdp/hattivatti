@@ -46,9 +46,9 @@ impl JobRequest {
     fn run_sbatch(&self, job_path: JobPath) -> String {
         let wd = job_path.path.parent().unwrap().to_str().unwrap();
         let job_script_path = job_path.path.to_str().unwrap();
-        let arguments = vec!["--parsable", "--output", wd, "--error", wd, job_script_path];
+        let arguments = vec!["--parsable", job_script_path];
 
-        let mut sbatch = Command::new("sbatch");
+        let mut sbatch = Command::new("/usr/bin/sbatch");
         let cmd = sbatch.args(&arguments);
         info!("Running sbatch process ");
         info!("{:?}", &cmd);
