@@ -2,6 +2,7 @@ use std::{fs, io};
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use chrono::Utc;
 use log::{info, warn};
@@ -11,7 +12,9 @@ use tinytemplate::TinyTemplate;
 use crate::slurm::job_request::{JobRequest, NxfParamsFile, PipelineParam, TargetGenome};
 use crate::WorkingDirectory;
 
-pub struct JobPath { pub path: PathBuf }
+pub struct JobPath {
+    pub path: PathBuf,
+}
 
 impl JobRequest {
     pub fn create(&self, wd: &WorkingDirectory) -> JobPath {

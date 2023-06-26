@@ -75,8 +75,7 @@ async fn main() {
             let job_path = job.create(&wd);
             if !args.dry_run {
                 job.stage(&conn);
-                // todo: sbatch this path
-                info!("{}", job_path.path.display())
+                job.submit(&conn, job_path);
             } else {
                 info!("--dry-run set, not submitting job to slurm");
             }
