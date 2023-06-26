@@ -16,8 +16,19 @@ impl JobRequest {
         let job_id = self.run_sbatch(job);
         info!("SLURM job id: {job_id}");
         let state = JobState::Submitted;
-        // todo: store SLURM job id in table too
         self.update(conn, state);
+        self.update_slurm(conn, job_id).expect("update OK");
+    }
+
+    fn update_slurm(&self, conn: &Connection, slurm_id: String) -> rusqlite::Result<()> {
+        let id = &self.pipeline_param.id.to_string();
+        info!("Updating {id} with slurm ID {slurm_id}");
+        conn
+            .execute("UPDATE job SET slurm_id = ? WHERE intervene_id = ?",
+            &[&id, &slurm_id])
+            .expect("Update");
+
+        Ok(())
     }
 
     fn update(&self, conn: &Connection, state: JobState) {
