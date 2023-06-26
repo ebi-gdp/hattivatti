@@ -16,7 +16,8 @@ env:
 jobs:
   build:
 
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
+    container: rockylinux:8-minimal
 
     steps:
     - uses: actions/checkout@v3
