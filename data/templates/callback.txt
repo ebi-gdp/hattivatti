@@ -18,7 +18,7 @@ callback_exit_handler() \{
   # escaping json is a pain
   echo $body > callback.txt
 
-  curl -X POST -H "Content-Type: application/json" -H "Authorization: Bearer $CALLBACK_TOKEN" --data @callback.txt $url
+  curl -X POST -H "Content-Type: application/json" -H "Authorization: Basic $CALLBACK_TOKEN" --data @callback.txt $url
 
   exit $exit_code
 }
