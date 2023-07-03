@@ -4,6 +4,7 @@ use serde_json::Result as JsonResult;
 
 use crate::slurm::job_request::JobRequest;
 
+/// Fetch and deserialise valid unsubmitted jobs from the database
 pub fn get_valid_jobs(conn: &Connection, dry_run: bool) -> Option<Vec<JobRequest>> {
     let mut stmt = conn.prepare("SELECT manifest FROM job WHERE valid == 1 AND staged == 0 AND submitted == 0").expect("");
     let rows = stmt.query_map([], |row| row.get(0)).expect("");
@@ -24,6 +25,7 @@ pub fn get_valid_jobs(conn: &Connection, dry_run: bool) -> Option<Vec<JobRequest
     }
 }
 
+/// Deserialise validated JSON into a [JobRequest]
 fn deserialise(json_strings: Vec<String>) -> JsonResult<Vec<JobRequest>> {
     let mut jobs: Vec<JobRequest> = Vec::new();
     for string in json_strings {
@@ -33,6 +35,7 @@ fn deserialise(json_strings: Vec<String>) -> JsonResult<Vec<JobRequest>> {
     Ok(jobs)
 }
 
+/// Release (commit transaction) or rollback (abort transaction) messages to the database
 fn release_or_rollback(conn: &Connection, dry_run: bool) {
     match dry_run {
         true => {

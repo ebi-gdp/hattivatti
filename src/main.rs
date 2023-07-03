@@ -1,3 +1,16 @@
+//! `hattivatti` submits [`pgsc_calc`](https://github.com/PGScatalog/pgsc_calc) jobs to
+//! [Puhti HPC](https://docs.csc.fi/computing/systems-puhti/) at CSC. Jobs are configured to execute
+//! in a secure way because genomes are sensitive data. `hattivatti` does the following:
+//!
+//! - Check [Allas](https://docs.csc.fi/data/Allas/) bucket for messages (JSON files)
+//! - Stream messages and validate them with JSON Schema
+//! - Ingest into SQLite database and delete message in bucket
+//! - Load valid messages from database and deserialise into [JobRequest]
+//! - Render job templates to [WorkingDirectory]
+//! - Submit jobs with sbatch system command and update the database with `SLURM_JOB_ID`
+
+#![warn(missing_docs)]
+
 use std::fs;
 use std::path::{PathBuf};
 
@@ -22,6 +35,7 @@ mod slurm;
 "This program reads job request messages from the INTERVENE backend and submits a sensitive data
 processing task to the SLURM scheduler. The program also monitors the state of submitted jobs,
 and notifies the INTERVENE backend when a requested job has succeeded or failed.")]
+/// CLI arguments (automatically parsed by CLAP)
 struct Args {
     /// A directory path that contains a set of JSON schema to validate messages in the job queue
     #[arg(short, long)]
@@ -34,10 +48,19 @@ struct Args {
     dry_run: bool
 }
 
+/// A directory for storing working data
+///
+/// Working data includes:
+/// - a SQLite database to store job request content and status
+/// - Rendered SLURM templates for each job request (split into directories based on INTERVENE ID)
+///
+/// TODO:
+/// - [ ] Clean up completed job templates
 pub struct WorkingDirectory {
     path: PathBuf,
 }
 
+/// Entrypoint to the program
 #[tokio::main]
 async fn main() {
     env_logger::init();
