@@ -83,3 +83,4 @@ $ rclone copy work/hattivatti.db s3allas://bucket/hattivatti/hattivatti.db
 * `jq`
 * `nextflow`
   * `java 16`
+* `SLURM`
