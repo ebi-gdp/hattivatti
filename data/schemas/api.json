@@ -39,11 +39,28 @@
           "type": "string",
           "description": "A globus collection ID",
           "format": "uuid"
-        }
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "filename": {
+                "type": "string"
+              },
+              "file_size": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": ["filename", "file_size"]
+          }
+        },
       },
         "required": [
           "dir_path_on_guest_collection",
-          "guest_collection_id"
+          "guest_collection_id",
+          "files"
         ]
     }
   },
