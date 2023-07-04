@@ -35,7 +35,7 @@ impl JobRequest {
 
         let header: Header = render_header(&&self.pipeline_param);
         let callback: Callback = render_callback(&&self.pipeline_param);
-        let vars: EnvVars = render_environment_variables(&&self);
+        let vars: EnvVars = read_environment_variables();
         let workflow: Workflow = render_nxf(&globus_path, &&self.pipeline_param,  &wd.path);
         let job = JobTemplate { header, callback, vars, workflow };
 
@@ -202,22 +202,11 @@ fn render_header(param: &PipelineParam) -> Header {
     Header { content: tt.render("header", &context).expect("Rendered document") }
 }
 
-/// Render environment variables using TinyTemplate
-fn render_environment_variables(request: &JobRequest) -> EnvVars {
-    /// included environment variables template
+/// Read environment variables from template
+fn read_environment_variables() -> EnvVars {
+    /// included environment variables template, everything is static
     static ENV_VARS: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/data/templates/env_vars.txt"));
-    let mut tt = TinyTemplate::new();
-    // html escape breaks JSON
-    tt.set_default_formatter(&tinytemplate::format_unescaped);
-    tt.add_template("env_var", ENV_VARS).expect("Template");
-
-    // todo: set globus base url dynamically
-    let globus_base_url: String = "https://g-1504d5.dd271.03c0.data.globus.org".to_string();
-    let guest_collection_id = request.globus_details.guest_collection_id.clone();
-    let message: String = serde_json::to_string(&request).expect("Deserialised");
-    let context = EnvVarContext { globus_base_url, guest_collection_id, message };
-
-    EnvVars { content: tt.render("env_var", &context).expect("Rendered document") }
+    EnvVars { content: ENV_VARS.to_string() }
 }
 
 /// Render the workflow commands using TinyTemplate
