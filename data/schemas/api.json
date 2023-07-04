@@ -55,7 +55,7 @@
             },
             "required": ["filename", "file_size"]
           }
-        },
+        }
       },
         "required": [
           "dir_path_on_guest_collection",
