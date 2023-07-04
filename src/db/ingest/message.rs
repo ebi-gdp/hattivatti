@@ -4,6 +4,10 @@ use rusqlite::Connection;
 
 use crate::request::message::AllasMessage;
 
+/// Load an AllasMessage into a database
+///
+/// The AllasMessage is stored in a JSON column and the schema will automatically extract the
+/// INTERVENE ID and add an insertion timestamp
 pub fn ingest_message(conn: &Connection, message: &AllasMessage) -> Result<()> {
     info!("Adding {} to db", &message.key);
     let json = &message.content;

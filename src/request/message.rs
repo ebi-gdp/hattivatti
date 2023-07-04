@@ -7,6 +7,10 @@ use rusoto_s3::S3;
 use serde_json::Value;
 use tokio::io::AsyncReadExt;
 
+/// Create an s3 client capable of connecting to Allas
+///
+/// [Allas](https://docs.csc.fi/data/Allas/) is an s3-compatible object store hosted at CSC and
+/// requires some configuration.
 pub fn make_allas_client() -> rusoto_s3::S3Client {
     let region = rusoto_core::Region::Custom {
         name: "us-east-1".to_owned(),
@@ -25,6 +29,10 @@ pub fn make_allas_client() -> rusoto_s3::S3Client {
                                   region)
 }
 
+/// A message in the work queue on Allas
+///
+/// Messages may be invalid or valid. All messages are ingested into the database, but only valid
+/// messages are loaded for submission after being ingested.
 pub struct AllasMessage {
     pub bucket: String,
     pub key: String,
@@ -32,6 +40,7 @@ pub struct AllasMessage {
     pub valid: bool
 }
 
+/// Fetch all messages in the work queue on Allas
 pub async fn fetch_all(s3_client: &rusoto_s3::S3Client, schema: &JSONSchema) -> Option<Vec<AllasMessage>> {
     let bucket = "intervene-dev";
     let prefix = "job-queue";
@@ -70,6 +79,7 @@ pub async fn fetch_all(s3_client: &rusoto_s3::S3Client, schema: &JSONSchema) -> 
     Some(jobs)
 }
 
+/// Stream job content (JSON) from a bucket object into a String
 async fn read_job(s3_client: &rusoto_s3::S3Client, bucket: &str, key: &String) -> String {
     let get_object_request = rusoto_s3::GetObjectRequest {
         bucket: bucket.into(),
@@ -93,7 +103,7 @@ async fn read_job(s3_client: &rusoto_s3::S3Client, bucket: &str, key: &String) -
     String::from_utf8_lossy(&body).to_string()
 }
 
-
+/// Validate job content with a JSON schema
 fn validate_message(json_string: &Value, schema: &JSONSchema) -> Result<(), io::Error> {
     info!("Validating message against JSON schema");
     match schema.validate(json_string) {
@@ -113,6 +123,11 @@ fn validate_message(json_string: &Value, schema: &JSONSchema) -> Result<(), io::
 }
 
 impl AllasMessage {
+    /// Create a new AllasMessage. Message content and a schema reference must be supplied at
+    /// creation time.
+    ///
+    /// It's important to keep track of an AllasMessage's bucket and key so it can be deleted
+    /// after being ingested into the database.
     pub fn new(content: String, bucket: String, key: String, schema: &JSONSchema) -> AllasMessage {
         info!("Parsing JSON into untyped structure");
         let value: Value = serde_json::from_str(&content).expect("Valid JSON");
@@ -120,6 +135,11 @@ impl AllasMessage {
         AllasMessage { content, bucket, key, valid }
     }
 
+    /// Delete messages in the work queue
+    ///
+    /// It's important to delete after the job has been ingested into the database. Jobs in the
+    /// database must have unique identifiers. Violating this constraint will currently cause a
+    /// panic.
     pub async fn delete(&self, s3_client: &rusoto_s3::S3Client) {
         let bucket = self.bucket.to_string();
         let key = self.key.to_string();

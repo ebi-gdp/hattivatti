@@ -7,15 +7,18 @@ callback_exit_handler() \{
   # report the status of the job to the INTERVENE backend
   exit_code=$?
 
-  # todo: don't change the url, change the message content
   if [ $exit_code -eq 0 ]; then
-    url="http://example.com/good/{name}"
+      body='\{"status": "COMPLETED", "pipelineId": "{name}", "outdir": ""}'
   else
-    url="http://example.com/bad/{name}"
+      body='\{"status": "FAILED", "pipelineId": "{name}", "outdir": ""}'
   fi
 
   # do a callback
-  curl -s "$url"
+  url="https://dev.intervenegeneticscores.org/pipeline-manager/pipeline/csc/notify"
+  # escaping json is a pain
+  echo $body > callback.txt
+
+  curl -X POST -H "Content-Type: application/json" -H "Authorization: Basic $CALLBACK_TOKEN" --data @callback.txt $url
 
   exit $exit_code
 }

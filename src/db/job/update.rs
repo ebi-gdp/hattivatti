@@ -1,3 +1,4 @@
+use std::path::Path;
 use std::process::Command;
 use log::info;
 use rusqlite::Connection;
@@ -16,8 +17,19 @@ impl JobRequest {
         let job_id = self.run_sbatch(job);
         info!("SLURM job id: {job_id}");
         let state = JobState::Submitted;
-        // todo: store SLURM job id in table too
         self.update(conn, state);
+        self.update_slurm(conn, job_id).expect("update OK");
+    }
+
+    fn update_slurm(&self, conn: &Connection, slurm_id: String) -> rusqlite::Result<()> {
+        let id = &self.pipeline_param.id.to_string();
+        info!("Updating {id} with slurm ID {slurm_id}");
+        conn
+            .execute("UPDATE job SET slurm_id = ? WHERE intervene_id = ?",
+            &[&slurm_id, &id])
+            .expect("Update");
+
+        Ok(())
     }
 
     fn update(&self, conn: &Connection, state: JobState) {
@@ -34,16 +46,18 @@ impl JobRequest {
 
     fn run_sbatch(&self, job_path: JobPath) -> String {
         let wd = job_path.path.parent().unwrap();
-        let output = Command::new("sbatch")
-            .arg("--parsable")
-            .arg("--output")
-            .arg(wd)
-            .arg("--error")
-            .arg(wd)
-            .arg(job_path.path)
-            .output()
-            .expect("sbatch");
+        let output_path = wd.join(Path::new("%j.out"));
+        let output_str = output_path.to_str().unwrap();
+        info!("Output path: {output_str}");
+        let job_script_path = job_path.path.to_str().unwrap();
 
-        String::from_utf8(output.stdout).expect("job id")
+        let arguments = vec!["--parsable", "--output", output_str, job_script_path];
+
+        let mut sbatch = Command::new("sbatch");
+        let cmd = sbatch.args(&arguments);
+        info!("{:?}", &cmd);
+        let output = cmd.output().expect("failed to execute process").stdout;
+
+        String::from_utf8(output).expect("job id")
     }
 }

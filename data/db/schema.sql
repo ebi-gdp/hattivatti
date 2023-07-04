@@ -5,5 +5,6 @@ CREATE TABLE IF NOT EXISTS job (
     valid INTEGER,
     staged INTEGER DEFAULT 0,
     submitted INTEGER DEFAULT 0,
+    slurm_id TEXT,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
