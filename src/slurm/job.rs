@@ -262,8 +262,9 @@ fn allas_config() -> AllasConfig {
 ///
 /// (no header is present in the output file)
 fn write_transfer(globus: &GlobusDetails, wd: &WorkingDirectory) {
-    info!("Writing transfer requests to working directory");
     let out_path = wd.path.join("transfer.txt");
+    info!("Writing transfer requests to {}", out_path.display());
+
     let mut file = File::create(out_path).expect("Transfer file");
     for data in &globus.files {
         let line = format!("{}/{} {}\n", globus.dir_path_on_guest_collection, data.filename, data.file_size);
