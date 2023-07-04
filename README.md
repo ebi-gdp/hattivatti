@@ -42,10 +42,9 @@ $ source /appl/profile/zz-csc-env.sh
 Sensitive variables:
 
 ```
-$ export GLOBUS_SECRET_TOKEN=<...>
 $ export AWS_ACCESS_KEY_ID=<...>
 $ export AWS_SECRET_ACCESS_KEY=<...>
-$ export NXF_SINGULARITY_CACHEDIR=<...>
+$ export CALLBACK_TOKEN=<...>
 ```
 
 Configuration variables:
@@ -54,6 +53,12 @@ Configuration variables:
 $ export RUST_LOG=info
 $ export NXF_SINGULARITY_CACHEDIR=<path>
 ```
+
+### Configure `globus-file-handler-cli`
+
+Download the jar and set path as a parameter (`--globus-jar-path`)
+
+The spring config directory **must be in the same directory as the jar** with the name `config/`. The spring config contains secrets for the transfer.
 
 ### Clone pgsc_calc
 
@@ -65,7 +70,7 @@ $ nextflow clone https://github.com/PGScatalog/pgsc_calc.git
 ### Run hattivatti
 
 ```
-$ hattivatti --schema-dir repo/data/schemas  --work-dir work
+$ hattivatti --schema-dir repo/data/schemas  --work-dir work --globus-jar-path globus.jar
 ```
 
 ### Backup database (optional)
@@ -77,10 +82,13 @@ $ module load allas
 $ rclone copy work/hattivatti.db s3allas://bucket/hattivatti/hattivatti.db
 ```
 
-### Software dependencies
+### Dependencies
 
-* `curl`
-* `jq`
-* `nextflow`
-  * `java 16`
-* `SLURM`
+* `curl` (callback)
+* `globus-file-handler-cli` (data transfer)
+* `nextflow` (`pgsc_calc`)
+  * `java 16` (nextflow and data transfer)
+* `parallel` (data transfer)
+* `SLURM` (submitting jobs)
+
+Note: `pgsc_calc` is executed using the `singularity` profile. All bioinformatics software is automatically fetched from a container registry. Images are cached after first fetch.
