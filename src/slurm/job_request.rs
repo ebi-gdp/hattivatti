@@ -28,10 +28,17 @@ pub struct NxfParamsFile {
 pub struct GlobusDetails {
     pub guest_collection_id: String,
     pub dir_path_on_guest_collection: String,
+    pub files: Vec<FileData>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct JobRequest {
     pub pipeline_param: PipelineParam,
-    pub globus_details: GlobusDetails,
+    pub globus_details: GlobusDetails
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct FileData {
+    pub filename: String,
+    pub file_size: u64,
 }

@@ -45,7 +45,10 @@ struct Args {
     work_dir: PathBuf,
     /// Read messages from the queue and create SLURM job files, but don't submit them to the SLURM scheduler
     #[arg(long)]
-    dry_run: bool
+    dry_run: bool,
+    /// Path to the globus file handler jar
+    #[arg(short, long)]
+    globus_jar_path: PathBuf
 }
 
 /// A directory for storing working data
@@ -95,7 +98,7 @@ async fn main() {
 
     if let Some(jobs) = jobs {
         for job in jobs {
-            let job_path = job.create(&wd);
+            let job_path = job.create(&wd, &args.globus_jar_path);
             if !args.dry_run {
                 job.stage(&conn);
                 job.submit(&conn, job_path);
