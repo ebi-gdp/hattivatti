@@ -8,7 +8,7 @@ use log::{info, warn};
 use serde::Serialize;
 use tinytemplate::TinyTemplate;
 
-use crate::slurm::job_request::{FileData, JobRequest, NxfParamsFile, PipelineParam, TargetGenome};
+use crate::slurm::job_request::{GlobusDetails, JobRequest, NxfParamsFile, PipelineParam, TargetGenome};
 use crate::WorkingDirectory;
 
 /// A JobPath is the path to a job script that's submitted to SLURM via sbatch
@@ -44,7 +44,7 @@ impl JobRequest {
         write_samplesheet(&&self.pipeline_param, &instance_wd);
         write_config(&&self.pipeline_param.nxf_params_file, &instance_wd);
         write_allas(&instance_wd);
-        write_transfer(&self.globus_details.files, &instance_wd);
+        write_transfer(&self.globus_details, &instance_wd);
 
         JobPath { path: path.clone() }
     }
@@ -256,17 +256,17 @@ fn allas_config() -> AllasConfig {
 ///
 /// The text file is space delimited with two columns:
 ///
-/// | filename     | file_size |
-/// | ------------ | --------- |
-/// | hapnest.psam | 8517      |
+/// | dir path/filename                    | file_size |
+/// | ------------------------------------ | --------- |
+/// | bwingfield@ebi.ac.uk/ID/hapnest.psam | 8517      |
 ///
 /// (no header is present in the output file)
-fn write_transfer(x: &Vec<FileData>, wd: &WorkingDirectory) {
-    info!("Writing transfer data");
+fn write_transfer(globus: &GlobusDetails, wd: &WorkingDirectory) {
+    info!("Writing transfer requests to working directory");
     let out_path = wd.path.join("transfer.txt");
     let mut file = File::create(out_path).expect("Transfer file");
-    for data in x {
-        let line = format!("{} {}\n", data.filename, data.file_size);
+    for data in &globus.files {
+        let line = format!("{}/{} {}\n", globus.dir_path_on_guest_collection, data.filename, data.file_size);
         file.write_all(&line.as_bytes()).expect("Line written");
     }
 }
