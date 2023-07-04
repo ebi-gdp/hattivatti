@@ -8,9 +8,5 @@ export NXF_EXECUTOR=local
 export NXF_WORK=$TMPDIR/work
 export NXF_HOME=$TMPDIR/home
 export CAPSULE_LOG=none
-# transfer.sh configuration
-export GLOBUS_BASE_URL={globus_base_url}
-export GLOBUS_GUEST_COLLECTION_ID={guest_collection_id}
-export JOB_MESSAGE='{message}'
 
 # ------------------------------------------------------------------------------
