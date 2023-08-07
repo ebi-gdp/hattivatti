@@ -14,11 +14,10 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
-
+  build_debug:
     runs-on: ubuntu-20.04
     container: rust:buster
-
+    if: github.ref == 'refs/heads/dev'
     steps:
     - uses: actions/checkout@v3
     - name: Build
@@ -30,3 +29,20 @@ jobs:
       with:
         name: hattivatti
         path: target/debug/hattivatti
+
+  build_release:
+    runs-on: ubuntu-20.04
+    container: rust:buster
+    if: github.ref == 'refs/heads/main'
+    steps:
+    - uses: actions/checkout@v3
+    - name: Build
+      run: cargo build --release --verbose
+    - name: Run tests
+      run: cargo test --verbose
+    - name: Upload binary
+      uses: actions/upload-artifact@v2
+      with:
+        name: hattivatti
+        path: target/release/hattivatti
+        
