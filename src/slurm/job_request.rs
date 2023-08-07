@@ -10,9 +10,13 @@ pub struct PipelineParam {
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct TargetGenome {
-    pvar: String,
-    pgen: String,
-    psam: String,
+    pvar: Option<String>,
+    pgen: Option<String>,
+    psam: Option<String>,
+    bed: Option<String>,
+    bim: Option<String>,
+    fam: Option<String>,
+    vcf: Option<String>,
     sampleset: String,
     chrom: Option<String>,
 }
