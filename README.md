@@ -67,6 +67,13 @@ $ cd /scratch/projec_XXXXXX/
 $ nextflow clone https://github.com/PGScatalog/pgsc_calc.git
 ```
 
+### Clone workflow-monitor
+
+```
+$ cd /scratch/projec_XXXXXX/
+$ git clone https://github.com/ebi-gdp/workflow-monitor.git
+```
+
 ### Run hattivatti
 
 ```
@@ -84,11 +91,11 @@ $ rclone copy work/hattivatti.db s3allas://bucket/hattivatti/hattivatti.db
 
 ### Dependencies
 
-* `curl` (callback)
 * `globus-file-handler-cli` (data transfer)
 * `nextflow` (`pgsc_calc`)
   * `java 16` (nextflow and data transfer)
 * `parallel` (data transfer)
 * `SLURM` (submitting jobs)
+* `workflow-monitor`
 
 Note: `pgsc_calc` is executed using the `singularity` profile. All bioinformatics software is automatically fetched from a container registry. Images are cached after first fetch.
