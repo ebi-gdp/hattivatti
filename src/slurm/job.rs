@@ -157,6 +157,7 @@ struct NextflowContext {
 #[derive(Serialize)]
 struct CallbackContext {
     name: String,
+    workflow_monitor_path: String
 }
 
 /// Write nextflow parameters to working directory
@@ -236,7 +237,9 @@ fn render_callback(param: &PipelineParam) -> Callback {
     let mut tt = TinyTemplate::new();
     tt.add_template("callback", CALLBACK).expect("Template");
     let name: &String = &param.id;
-    let context = CallbackContext { name: name.clone() };
+    static WORKFLOW_MONITOR_PATH: &str = "/scratch/project_2004504/bwingfield/workflow-monitor/main.py";
+    let context = CallbackContext { name: name.clone(),
+        workflow_monitor_path: WORKFLOW_MONITOR_PATH.to_string() };
     Callback { content: tt.render("callback", &context).expect("Rendered callback") }
 }
 

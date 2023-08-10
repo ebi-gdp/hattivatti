@@ -1,12 +1,12 @@
 
 # time to start doing work!
 
-# step 0. load dependencies
+# load dependencies
 # (curl, jq, and singularity/apptainer are preloaded on Puhti)
 module load nextflow/22.10.1
 module load parallel
 
-# step 1: transfer data in parallel
+# transfer data in parallel
 parallel --col-sep ' ' \
   -a {work_dir}/{name}/transfer.txt \
   java -Xmx256m \
@@ -23,7 +23,7 @@ set_tmpdir() \{
 
 set_tmpdir
 
-# step 2: run pgsc_calc and calculate some scores
+# run pgsc_calc and calculate some scores!
 nextflow run {pgsc_calc_dir} -profile singularity \
          -c {work_dir}/{name}/allas.config \
          -params-file {work_dir}/{name}/params.json \
@@ -32,9 +32,8 @@ nextflow run {pgsc_calc_dir} -profile singularity \
          --min_overlap 0.01 \
          --max_cpus 40 \
          --max_memory "32.GB" \
-         --parallel 
-
-# step 3: report job status to INTERVENE platform
-# (automatically executed in callback_exit_handler by trap)
+         --parallel \
+         -with-weblog http://localhost:8000 \
+         -name {name}
 
 # ------------------------------------------------------------------------------
