@@ -24,7 +24,8 @@ pub struct JobPath {
 }
 
 impl JobRequest {
-    pub fn create(&self, wd: &WorkingDirectory, globus_path: &PathBuf, namespace: &PlatformNamespace) -> JobPath {
+    pub fn create(&self, wd: &WorkingDirectory, globus_path: &PathBuf, namespace: &PlatformNamespace,
+    monitor_path: &PathBuf) -> JobPath {
         let instance_wd = WorkingDirectory { path: wd.path.join(&&self.pipeline_param.id) };
         info!("Creating job {} in working directory {}", &&self.pipeline_param.id, &instance_wd.path.display());
 
@@ -35,7 +36,7 @@ impl JobRequest {
         fs::create_dir(&instance_wd.path).expect("Create working directory");
 
         let header: Header = render_header(&&self.pipeline_param);
-        let callback: Callback = render_callback(&&self.pipeline_param, &namespace);
+        let callback: Callback = render_callback(&&self.pipeline_param, &namespace, &monitor_path);
         let vars: EnvVars = read_environment_variables();
         let workflow: Workflow = render_nxf(&globus_path, &&self.pipeline_param,  &wd.path, &namespace);
         let job = JobTemplate { header, callback, vars, workflow };
@@ -234,15 +235,14 @@ fn render_nxf(globus_path: &PathBuf, param: &PipelineParam, work_dir: &Path, nam
 }
 
 /// Render the callback using TinyTemplate
-fn render_callback(param: &PipelineParam, namespace: &PlatformNamespace) -> Callback {
+fn render_callback(param: &PipelineParam, namespace: &PlatformNamespace, monitor_path: &&PathBuf) -> Callback {
     /// included callback template
     static CALLBACK: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/data/templates/callback.txt"));
     let mut tt = TinyTemplate::new();
     tt.add_template("callback", CALLBACK).expect("Template");
     let name: &String = &param.id;
-    static WORKFLOW_MONITOR_PATH: &str = "/scratch/project_2004504/bwingfield/workflow-monitor/main.py";
     let context = CallbackContext { name: name.clone(),
-        workflow_monitor_path: WORKFLOW_MONITOR_PATH.to_string(),
+        workflow_monitor_path: monitor_path.to_string_lossy().to_string(),
         namespace: namespace.to_string()
     };
     Callback { content: tt.render("callback", &context).expect("Rendered callback") }

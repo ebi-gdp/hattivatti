@@ -53,7 +53,10 @@ struct Args {
     globus_jar_path: PathBuf,
     /// Which platform namespace do you want to deploy to? [dev, test, prod]
     #[arg(short, long, value_enum)]
-    namespace: PlatformNamespace
+    namespace: PlatformNamespace,
+    /// Path to the workflow monitor binary (installed in a venv)
+    #[arg(long)]
+    workflow_monitor_path: PathBuf,
 }
 
 /// A directory for storing working data
@@ -105,7 +108,7 @@ async fn main() {
 
     if let Some(jobs) = jobs {
         for job in jobs {
-            let job_path = job.create(&wd, &args.globus_jar_path, &args.namespace);
+            let job_path = job.create(&wd, &args.globus_jar_path, &args.namespace, &args.workflow_monitor_path);
             if !args.dry_run {
                 job.stage(&conn);
                 job.submit(&conn, job_path);
