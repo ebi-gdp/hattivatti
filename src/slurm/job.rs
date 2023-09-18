@@ -7,6 +7,7 @@ use chrono::Utc;
 use log::{info, warn};
 use serde::Serialize;
 use tinytemplate::TinyTemplate;
+use crate::namespace::PlatformNamespace;
 
 use crate::slurm::job_request::{GlobusDetails, JobRequest, NxfParamsFile, PipelineParam, TargetGenome};
 use crate::WorkingDirectory;
@@ -23,7 +24,7 @@ pub struct JobPath {
 }
 
 impl JobRequest {
-    pub fn create(&self, wd: &WorkingDirectory, globus_path: &PathBuf) -> JobPath {
+    pub fn create(&self, wd: &WorkingDirectory, globus_path: &PathBuf, namespace: &PlatformNamespace) -> JobPath {
         let instance_wd = WorkingDirectory { path: wd.path.join(&&self.pipeline_param.id) };
         info!("Creating job {} in working directory {}", &&self.pipeline_param.id, &instance_wd.path.display());
 
@@ -36,7 +37,7 @@ impl JobRequest {
         let header: Header = render_header(&&self.pipeline_param);
         let callback: Callback = render_callback(&&self.pipeline_param);
         let vars: EnvVars = read_environment_variables();
-        let workflow: Workflow = render_nxf(&globus_path, &&self.pipeline_param,  &wd.path);
+        let workflow: Workflow = render_nxf(&globus_path, &&self.pipeline_param,  &wd.path, &namespace);
         let job = JobTemplate { header, callback, vars, workflow };
 
         let path = &instance_wd.path.join("job.sh");
@@ -148,6 +149,7 @@ struct EnvVarContext {
 struct NextflowContext {
     name: String,
     work_dir: String,
+    namespace: String,
     pgsc_calc_dir: String,
     globus_path: String,
     globus_parent_path: String
@@ -211,18 +213,18 @@ fn read_environment_variables() -> EnvVars {
 }
 
 /// Render the workflow commands using TinyTemplate
-fn render_nxf(globus_path: &PathBuf, param: &PipelineParam, work_dir: &Path) -> Workflow {
+fn render_nxf(globus_path: &PathBuf, param: &PipelineParam, work_dir: &Path, namespace: &PlatformNamespace) -> Workflow {
     /// included workflow template
     static NXF: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/data/templates/nxf.txt"));
     let mut tt = TinyTemplate::new();
     tt.add_template("nxf", NXF).expect("Template");
     let name: &String = &param.id;
     let wd = work_dir.to_str().expect("path").to_string();
-    // todo: make dynamic based on deployment namespace
     /// installation directory of pgsc_calc (TODO: make this a parameter)
     static PGSC_CALC_DIR: &str = "/scratch/project_2004504/pgsc_calc/";
     let context = NextflowContext { name: name.clone(),
         work_dir: wd,
+        namespace: namespace.to_string(),
         pgsc_calc_dir: PGSC_CALC_DIR.to_string(),
         globus_path: globus_path.to_str().expect("Globus path").to_string(),
         globus_parent_path: globus_path.parent().expect("Globus parent").to_str().expect("Globus parent path").to_string()

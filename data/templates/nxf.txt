@@ -28,7 +28,7 @@ nextflow run {pgsc_calc_dir} -profile singularity \
          -c {work_dir}/{name}/allas.config \
          -params-file {work_dir}/{name}/params.json \
          --input {work_dir}/{name}/input.json \
-         --outdir s3://intervene-dev/{name} \
+         --outdir s3://intervene-{namespace}/{name} \
          --min_overlap 0.01 \
          --max_cpus 40 \
          --max_memory "32.GB" \

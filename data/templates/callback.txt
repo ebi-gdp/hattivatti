@@ -10,5 +10,8 @@ module load python-data/3.10-23.07
 # run the monitor in the background
 python3 {workflow_monitor_path} &
 
+# grab workflow monitor pid
+workflow_monitor_pid=$!
+
 # ------------------------------------------------------------------------------
 
