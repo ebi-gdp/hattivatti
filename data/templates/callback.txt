@@ -8,7 +8,9 @@ set -euxo pipefail
 module load python-data/3.10-23.07
 
 # run the monitor in the background
-python3 {workflow_monitor_path} &
+python3 {workflow_monitor_path} \
+  --callback_token $CALLBACK_TOKEN \
+  --namespace {namespace} &
 
 # grab workflow monitor pid
 workflow_monitor_pid=$!
