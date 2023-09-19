@@ -11,7 +11,7 @@ parallel --col-sep ' ' \
   -a {work_dir}/{name}/transfer.txt \
   java -Xmx256m \
     -jar {globus_path} \
-    --spring.config.location={globus_parent_path}/config/ \
+    --spring.config.location={globus_parent_path}/config/{namespace} \
     -s \{1} -d $TMPDIR --file_size \{2}
 
 # the job _must be_ scheduled on a node with local storage
