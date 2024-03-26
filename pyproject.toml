@@ -12,10 +12,16 @@ packages = [
 [tool.poetry.dependencies]
 python = "^3.12"
 fastapi = "^0.110.0"
+uvicorn = {extras = ["standard"], version = "^0.29.0"}
+pgscatalog-core = "^0.1.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.1.1"
 pyright = "^1.1.355"
+
+
+[tool.poetry.group.standard.dependencies]
+uvicorn = "^0.29.0"
 
 [build-system]
 requires = ["poetry-core"]
