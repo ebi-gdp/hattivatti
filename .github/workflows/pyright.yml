@@ -1,0 +1,9 @@
+name: Pyright type checking 
+on: [push, pull_request]
+jobs:
+  ruff:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: jakebailey/pyright-action@v2
+      with:
+        version: 1.1.355
