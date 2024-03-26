@@ -7,7 +7,3 @@ repos:
     - id: ruff
     # Run the formatter.
     - id: ruff-format
-- repo: https://github.com/RobertCraigie/pyright-python
-  rev: v1.1.355
-  hooks:
-    - id: pyright
