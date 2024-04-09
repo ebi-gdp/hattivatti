@@ -1,15 +1,34 @@
-name: Ruff linting
+name: CI
 on: [push, pull_request]
 jobs:
   ruff:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: chartboost/ruff-action@v1
+        with:
+          src: './pyvatti/src'
+          args: 'format --check'
 
   pyright:
     runs-on: ubuntu-latest
     steps:
-    - uses: jakebailey/pyright-action@v2
-      with:
-        version: 1.1.355
+      - name: Setup python
+        uses: actions/setup-python@v5
+        with:
+          python-version: 3.12
+            
+      - name: Python Poetry Action
+        uses: abatilo/actions-poetry@v3.0.0
+
+      - run: poetry install
+        working-directory: ./pyvatti
+
+      - run: echo "$(poetry env info --path)/bin" >> $GITHUB_PATH
+        working-directory: ./pyvatti
+
+      - uses: jakebailey/pyright-action@v2
+        with:
+          version: 1.1.355
+          working-directory: ./pyvatti
