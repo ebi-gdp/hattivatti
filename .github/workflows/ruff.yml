@@ -14,15 +14,16 @@ jobs:
   pyright:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
       - name: Setup python
         uses: actions/setup-python@v5
         with:
           python-version: 3.12
             
-      - name: Python Poetry Action
-        uses: abatilo/actions-poetry@v3.0.0
+      - run: pip install poetry
 
-      - run: poetry install
+      - run: poetry install --with dev --all-extras
         working-directory: ./pyvatti
 
       - run: echo "$(poetry env info --path)/bin" >> $GITHUB_PATH
