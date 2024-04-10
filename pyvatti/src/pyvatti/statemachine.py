@@ -1,3 +1,4 @@
+# type: ignore
 """This module contains a state machine that represents job states and their transitions"""
 
 import enum
@@ -116,7 +117,7 @@ class PolygenicScoreJob:
 
     def notify(self):
         """Notify the backend about the job state"""
-        print(f"sending state notification: {self.state}")  # pyright: ignore[reportAttributeAccessIssue]
+        print(f"sending state notification: {self.state}")
 
     def __repr__(self):
         return f"{self.__class__.__name__}(id={self.id!r})"
