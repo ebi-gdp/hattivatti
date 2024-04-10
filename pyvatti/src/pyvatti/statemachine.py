@@ -116,7 +116,7 @@ class PolygenicScoreJob:
 
     def notify(self):
         """Notify the backend about the job state"""
-        print(f"sending state notification: {self.state}")
+        print(f"sending state notification: {self.state}")  # pyright: ignore[reportAttributeAccessIssue]
 
     def __repr__(self):
         return f"{self.__class__.__name__}(id={self.id!r})"
