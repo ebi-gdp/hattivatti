@@ -4,7 +4,6 @@
 import enum
 
 from transitions import Machine
-
 from transitions.extensions.states import add_state_features, Timeout
 
 
@@ -20,7 +19,7 @@ class TimeoutMachine(Machine):
     pass
 
 
-class PolygenicScoreJob:
+class PolygenicScoreJob(TimeoutMachine):
     """This is a state machine for polygenic score calculation jobs
 
     >>> job = PolygenicScoreJob("INT123456")
@@ -29,6 +28,7 @@ class PolygenicScoreJob:
     >>> job.state
     <States.CREATED: 'created'>
     >>> _ = job.deploy()
+    creating resources
     sending state notification: States.DEPLOYED
     >>> job.state
     <States.DEPLOYED: 'deployed'>
@@ -54,6 +54,7 @@ class PolygenicScoreJob:
 
     >>> job = PolygenicScoreJob("INT123456", timeout_seconds=1)
     >>> _ = job.deploy()
+    creating resources
     sending state notification: States.DEPLOYED
     >>> import time
     >>> time.sleep(2)
@@ -69,25 +70,26 @@ class PolygenicScoreJob:
             "trigger": "deploy",
             "source": States.CREATED,
             "dest": States.DEPLOYED,
+            "prepare": ["create_resources"],
             "after": ["notify"],
         },
         {
             "trigger": "succeed",
             "source": States.DEPLOYED,
             "dest": States.SUCCEEDED,
-            "after": ["notify", "purge"],
+            "after": ["notify", "destroy_resources"],
         },
         {
             "trigger": "error",
             "source": States.CREATED,
             "dest": States.FAILED,
-            "after": ["notify", "purge"],
+            "after": ["notify", "destroy_resources"],
         },
         {
             "trigger": "error",
             "source": States.DEPLOYED,
             "dest": States.FAILED,
-            "after": ["notify", "purge"],
+            "after": ["notify", "destroy_resources"],
         },
     ]
 
@@ -104,14 +106,18 @@ class PolygenicScoreJob:
         ]
 
         self.id = id
-        self.machine = TimeoutMachine(
-            model=self,
+        super().__init__(
+            self,
             states=states,
             initial=States.CREATED,
             transitions=self.transitions,
         )
 
-    def purge(self):
+    def create_resources(self):
+        """Create resources required to start the job"""
+        print("creating resources")
+
+    def destroy_resources(self):
         """Delete all resources associated with this job"""
         print(f"deleting all resources: {self.id}")
 
