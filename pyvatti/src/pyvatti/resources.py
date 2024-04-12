@@ -3,7 +3,7 @@
 import abc
 
 
-class ResourceProvider(abc.ABC):
+class ResourceHandler(abc.ABC):
     @abc.abstractmethod
     def create_resources(self):
         """Create the compute resources needed to run a job
@@ -23,7 +23,7 @@ class ResourceProvider(abc.ABC):
         ...
 
 
-class GoogleResourceProvider(ResourceProvider):
+class GoogleResourceHandler(ResourceHandler):
     def __init__(self):
         pass
 
