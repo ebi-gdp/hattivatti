@@ -84,6 +84,6 @@ class PGSJobParams(BaseModel):
         return x
 
 
-class PGSJob(BaseModel):
+class JobModel(BaseModel):
     globus_details: GlobusConfig
     pipeline_param: PGSJobParams

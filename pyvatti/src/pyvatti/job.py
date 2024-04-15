@@ -8,10 +8,11 @@ from transitions.extensions.states import add_state_features, Timeout
 
 
 class States(enum.Enum):
-    CREATED = "created"  # a good request was received
-    DEPLOYED = "deployed"  # job resources have been requested
-    FAILED = "failed"  # something went wrong during job execution
-    SUCCEEDED = "succeeded"  # everything was OK :)
+    REQUESTED = "requested"
+    CREATED = "created"
+    DEPLOYED = "deployed"
+    FAILED = "failed"
+    SUCCEEDED = "succeeded"
 
 
 @add_state_features(Timeout)
@@ -26,9 +27,10 @@ class PolygenicScoreJob(TimeoutMachine):
     >>> job
     PolygenicScoreJob(id='INT123456')
     >>> job.state
-    <States.CREATED: 'created'>
-    >>> _ = job.deploy()
+    <States.REQUESTED: 'requested'>
+    >>> _ = job.create()
     creating resources
+    >>> _ = job.deploy()
     sending state notification: States.DEPLOYED
     >>> job.state
     <States.DEPLOYED: 'deployed'>
@@ -46,6 +48,7 @@ class PolygenicScoreJob(TimeoutMachine):
     Let's look at a misbehaving job:
 
     >>> bad_job = PolygenicScoreJob("INT789123")
+
     >>> _ = bad_job.error()
     sending state notification: States.FAILED
     deleting all resources: INT789123
@@ -53,8 +56,12 @@ class PolygenicScoreJob(TimeoutMachine):
     When a deployed job times out the error transition is triggered:
 
     >>> job = PolygenicScoreJob("INT123456", timeout_seconds=1)
-    >>> _ = job.deploy()
+    >>> _ = job.create()
     creating resources
+
+    Trigger the deployed state once we get a message back (not shown):
+
+    >>> _ = job.deploy()
     sending state notification: States.DEPLOYED
     >>> import time
     >>> time.sleep(2)
@@ -67,16 +74,27 @@ class PolygenicScoreJob(TimeoutMachine):
     # when callback methods are invoked _after_ a transition, state = destination
     transitions = [
         {
+            "trigger": "create",
+            "source": States.REQUESTED,
+            "dest": States.CREATED,
+            "prepare": ["create_resources"],
+        },
+        {
             "trigger": "deploy",
             "source": States.CREATED,
             "dest": States.DEPLOYED,
-            "prepare": ["create_resources"],
             "after": ["notify"],
         },
         {
             "trigger": "succeed",
             "source": States.DEPLOYED,
             "dest": States.SUCCEEDED,
+            "after": ["notify", "destroy_resources"],
+        },
+        {
+            "trigger": "error",
+            "source": States.REQUESTED,
+            "dest": States.FAILED,
             "after": ["notify", "destroy_resources"],
         },
         {
@@ -95,6 +113,7 @@ class PolygenicScoreJob(TimeoutMachine):
 
     def __init__(self, id, timeout_seconds=86400):
         states = [
+            {"name": States.REQUESTED},
             {"name": States.CREATED},
             {
                 "name": States.DEPLOYED,
@@ -109,7 +128,7 @@ class PolygenicScoreJob(TimeoutMachine):
         super().__init__(
             self,
             states=states,
-            initial=States.CREATED,
+            initial=States.REQUESTED,
             transitions=self.transitions,
         )
 
