@@ -2,9 +2,14 @@
 """This module contains a state machine that represents job states and their transitions"""
 
 import enum
+import logging
 
-from transitions import Machine
-from transitions.extensions.states import add_state_features, Timeout
+from transitions import EventData
+from transitions.extensions.asyncio import AsyncMachine
+
+from .resources import GoogleResourceHandler
+
+logger = logging.getLogger(__name__)
 
 
 class States(enum.Enum):
@@ -15,32 +20,28 @@ class States(enum.Enum):
     SUCCEEDED = "succeeded"
 
 
-@add_state_features(Timeout)
-class TimeoutMachine(Machine):
-    pass
-
-
-class PolygenicScoreJob(TimeoutMachine):
+class PolygenicScoreJob(AsyncMachine):
     """This is a state machine for polygenic score calculation jobs
 
+    >>> import asyncio
     >>> job = PolygenicScoreJob("INT123456")
     >>> job
     PolygenicScoreJob(id='INT123456')
     >>> job.state
     <States.REQUESTED: 'requested'>
-    >>> _ = job.create()
+    >>> _ = asyncio.run(job.create())
     creating resources
-    >>> _ = job.deploy()
+    >>> _ = asyncio.run(job.deploy())
     sending state notification: States.DEPLOYED
     >>> job.state
     <States.DEPLOYED: 'deployed'>
-    >>> _ = job.succeed()
+    >>> _ = asyncio.run(job.succeed())
     sending state notification: States.SUCCEEDED
     deleting all resources: INT123456
 
     Once a job has succeeded it can't error:
 
-    >>> _ = job.error()
+    >>> _ = asyncio.run(job.error())
     Traceback (most recent call last):
     ...
     transitions.core.MachineError: "Can't trigger event error from state SUCCEEDED!"
@@ -49,26 +50,19 @@ class PolygenicScoreJob(TimeoutMachine):
 
     >>> bad_job = PolygenicScoreJob("INT789123")
 
-    >>> _ = bad_job.error()
+    >>> _ = asyncio.run(bad_job.error())
     sending state notification: States.FAILED
     deleting all resources: INT789123
 
-    When a deployed job times out the error transition is triggered:
+    It's important that jobs can be pickled and loaded back OK:
 
-    >>> job = PolygenicScoreJob("INT123456", timeout_seconds=1)
-    >>> _ = job.create()
-    creating resources
-
-    Trigger the deployed state once we get a message back (not shown):
-
-    >>> _ = job.deploy()
-    sending state notification: States.DEPLOYED
-    >>> import time
-    >>> time.sleep(2)
-    sending state notification: States.FAILED
-    deleting all resources: INT123456
-
-    It's really important that any jobs in the FAILED and SUCCEEDED states clean themselves up.
+    >>> import pickle
+    >>> dump = pickle.dumps(job)
+    >>> job2 = pickle.loads(dump)
+    >>> job.states.keys() == job2.states.keys()
+    True
+    >>> job.state == job2.state
+    True
     """
 
     # when callback methods are invoked _after_ a transition, state = destination
@@ -77,7 +71,7 @@ class PolygenicScoreJob(TimeoutMachine):
             "trigger": "create",
             "source": States.REQUESTED,
             "dest": States.CREATED,
-            "prepare": ["create_resources"],
+            "prepare": ["create_resources", "notify"],
         },
         {
             "trigger": "deploy",
@@ -111,36 +105,44 @@ class PolygenicScoreJob(TimeoutMachine):
         },
     ]
 
-    def __init__(self, id, timeout_seconds=86400):
+    def __init__(self, id):
         states = [
+            # a dummy initial state: /launch got POSTed
             {"name": States.REQUESTED},
+            # helm install worked (creating the workflow pod)
             {"name": States.CREATED},
-            {
-                "name": States.DEPLOYED,
-                "timeout": timeout_seconds,
-                "on_timeout": "error",
-            },
+            # the workflow POSTed the started event to the monitor API
+            {"name": States.DEPLOYED},
+            # the workflow POSTed the completed event to the monitor API
             {"name": States.SUCCEEDED},
+            # the workflow POSTed the error event to the monitor API, timed out, or
+            # an exception was raised in any of the previous states
             {"name": States.FAILED},
         ]
 
         self.id = id
+        self.handler = GoogleResourceHandler()
+
+        # set up the state machine
         super().__init__(
             self,
             states=states,
             initial=States.REQUESTED,
             transitions=self.transitions,
+            send_event=True,
         )
 
-    def create_resources(self):
+    async def create_resources(self, event: EventData):
         """Create resources required to start the job"""
         print("creating resources")
+        await self.handler.create_resources(job_model=event.kwargs["job_model"])
 
-    def destroy_resources(self):
+    async def destroy_resources(self, event: EventData):
         """Delete all resources associated with this job"""
         print(f"deleting all resources: {self.id}")
+        await self.handler.destroy_resources()
 
-    def notify(self):
+    async def notify(self, event):
         """Notify the backend about the job state"""
         print(f"sending state notification: {self.state}")
 

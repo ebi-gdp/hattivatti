@@ -1,3 +1,5 @@
+"""This module contains pydantic models for nextflow web log messages"""
+
 import enum
 
 from datetime import datetime
@@ -20,9 +22,9 @@ class LogMessage(BaseModel, extra=Extra.allow):
     runId: UUID4
     event: LogEvent
     utcTime: datetime
+    trace: Optional[dict] = None
     # metadata is intentionally not modelled because we don't use it
     metadata: Optional[dict] = None
-    trace: Optional[dict] = None
 
 
 class SummaryTrace(BaseModel):

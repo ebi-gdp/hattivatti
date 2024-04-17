@@ -1,3 +1,5 @@
+"""This module contains pydantic models for launching a scoring job"""
+
 import enum
 import pathlib
 from typing import Optional, Self
@@ -74,7 +76,6 @@ class PGSJobParams(BaseModel):
     id: str
     target_genomes: list[TargetGenome]
     nxf_params_file: PGSParams
-    nxf_work: str
 
     @field_validator("id")
     @classmethod
