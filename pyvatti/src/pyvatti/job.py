@@ -105,7 +105,7 @@ class PolygenicScoreJob(AsyncMachine):
         },
     ]
 
-    def __init__(self, id):
+    def __init__(self, intp_id):
         states = [
             # a dummy initial state: /launch got POSTed
             {"name": States.REQUESTED},
@@ -120,8 +120,8 @@ class PolygenicScoreJob(AsyncMachine):
             {"name": States.FAILED},
         ]
 
-        self.id = id
-        self.handler = GoogleResourceHandler()
+        self.intp_id = intp_id
+        self.handler = GoogleResourceHandler(intp_id=intp_id)
 
         # set up the state machine
         super().__init__(
@@ -135,11 +135,16 @@ class PolygenicScoreJob(AsyncMachine):
     async def create_resources(self, event: EventData):
         """Create resources required to start the job"""
         print("creating resources")
-        await self.handler.create_resources(job_model=event.kwargs["job_model"])
+        try:
+            await self.handler.create_resources(job_model=event.kwargs["job_model"])
+        except Exception as e:
+            logger.warning(f"Something went wrong, {self.intp_id} entering error state")
+            await self.error()
+            raise Exception from e
 
     async def destroy_resources(self, event: EventData):
         """Delete all resources associated with this job"""
-        print(f"deleting all resources: {self.id}")
+        print(f"deleting all resources: {self.intp_id}")
         await self.handler.destroy_resources()
 
     async def notify(self, event):
@@ -147,4 +152,4 @@ class PolygenicScoreJob(AsyncMachine):
         print(f"sending state notification: {self.state}")
 
     def __repr__(self):
-        return f"{self.__class__.__name__}(id={self.id!r})"
+        return f"{self.__class__.__name__}(id={self.intp_id!r})"
