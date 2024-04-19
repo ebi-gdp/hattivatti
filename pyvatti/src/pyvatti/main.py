@@ -1,11 +1,8 @@
 import asyncio
-import pathlib
 import shutil
-import tempfile
 from contextlib import asynccontextmanager
 import datetime
 
-import httpx
 from fastapi import FastAPI, BackgroundTasks, HTTPException
 import logging
 import shelve
@@ -15,22 +12,18 @@ from starlette import status
 from .job import PolygenicScoreJob
 from .jobmodels import JobModel
 from .logmodels import LogMessage, LogEvent, MonitorMessage, SummaryTrace
+from .config import settings
+from . import CLIENT, SHELF_LOCK, SHELF_PATH, TEMP_DIR
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-SHELF_LOCK = asyncio.Lock()
-CLIENT = httpx.AsyncClient()
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    tempdir = tempfile.mkdtemp()
-    Config.SHELF_PATH = pathlib.Path(tempdir) / "shelve.dat"
-    logger.info(f"Created temporary shelf file {Config.SHELF_PATH}")
     yield
-    shutil.rmtree(tempdir)
-    logger.info(f"Cleaned up {Config.SHELF_PATH}")
+    shutil.rmtree(TEMP_DIR)
+    logger.info(f"Cleaned up {SHELF_PATH}")
     # close the connection pool
     await CLIENT.aclose()
     logger.info("Closed httpx thread pool")
@@ -47,7 +40,7 @@ async def launch_job(job_model: JobModel):
     await job_instance.create(job_model=job_model, client=CLIENT)
 
     async with SHELF_LOCK:
-        with shelve.open(Config.SHELF_PATH) as db:
+        with shelve.open(SHELF_PATH) as db:
             db[id] = job_instance
 
 
@@ -55,11 +48,11 @@ async def timeout_job(job_id: str):
     """Background task to check if a job is still on the shelf after a timeout.
 
     If it is, trigger the error state, which will force a cleanup and notify the backend"""
-    logger.info(f"Async timeout for {Config.TIMEOUT_SECONDS}s started for {job_id}")
-    await asyncio.sleep(Config.TIMEOUT_SECONDS)
+    logger.info(f"Async timeout for {settings.TIMEOUT_SECONDS}s started for {job_id}")
+    await asyncio.sleep(settings.TIMEOUT_SECONDS)
 
     async with SHELF_LOCK:
-        with shelve.open(Config.SHELF_PATH) as db:
+        with shelve.open(SHELF_PATH) as db:
             job_instance: PolygenicScoreJob = db.get(job_id, None)
 
     if job_instance is not None:
@@ -74,7 +67,7 @@ async def timeout_job(job_id: str):
 
 @app.post("/launch", status_code=status.HTTP_201_CREATED)
 async def launch(job: JobModel, background_tasks: BackgroundTasks):
-    with shelve.open(Config.SHELF_PATH) as db:
+    with shelve.open(SHELF_PATH) as db:
         if job.pipeline_param.id in db:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
@@ -118,20 +111,15 @@ async def monitor(message: LogMessage):
 
 
 async def update_job_state(state, message: MonitorMessage, delete=False):
-    with shelve.open(Config.SHELF_PATH) as db:
+    with shelve.open(SHELF_PATH) as db:
         job_instance: PolygenicScoreJob = db[message.run_name]
 
     logger.info(f"Triggering state {state}")
     await job_instance.trigger(state, client=CLIENT, message=message)
 
     async with SHELF_LOCK:
-        with shelve.open(Config.SHELF_PATH) as db:
+        with shelve.open(SHELF_PATH) as db:
             if not delete:
                 db[message.run_name] = job_instance
             else:
                 db.pop(message.run_name)
-
-
-class Config:
-    SHELF_PATH = None
-    TIMEOUT_SECONDS = 60 * 60 * 24
