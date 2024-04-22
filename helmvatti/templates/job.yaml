@@ -7,28 +7,59 @@ spec:
   template:
     spec:
       serviceAccountName: nextflow
-      containers:
-        - args:
-            - nextflow run https://gitlab.ebi.ac.uk/gdp-public/pgsc_calc.git -r {{ .Chart.AppVersion }} --input /opt/input.json -params-file /opt/params.yml -c /opt/nxf.config; sleep 600
-          command:
-            - /bin/sh
-            - '-c'
-          env:
-            - name: NXF_SCM_FILE
-              value: /opt/scm
+      initContainers:
+        - name: globflow
           image: {{ .Values.baseImage }}:{{ .Values.dockerTag }}
           imagePullPolicy: {{ .Values.pullPolicy }}
-          name: nextflow
+          command: ['sh', '-c', "nextflow run https://gitlab.ebi.ac.uk/gdp-public/globflow.git -params-file /opt/params.yml -c /opt/nxf/nxf.config"]
+          env:
+            - name: NXF_SCM_FILE
+              value: /opt/nxf/scm
           resources:
             requests:
               cpu: 1
               memory: 2G
               ephemeral-storage: 10G
           volumeMounts:
-            - name: config-volume
+            - name: transfer-config-volume
+              mountPath: /opt/
+            - name: transfer-config-nxf-volume
+              mountPath: /opt/nxf/
+            - name: globflow-secrets
+              mountPath: /opt/globflow/
+              readOnly: true         
+      containers:
+        - name: pgsc-calc
+          image: {{ .Values.baseImage }}:{{ .Values.dockerTag }}
+          imagePullPolicy: {{ .Values.pullPolicy }}
+          command: ['sh', '-c', "nextflow run https://gitlab.ebi.ac.uk/gdp-public/pgsc_calc.git -r {{ .Chart.AppVersion }} -params-file /opt/params.yml -c /opt/nxf.config"]
+          env:
+            - name: NXF_SCM_FILE
+              value: /opt/scm
+          resources:
+            requests:
+              cpu: 1
+              memory: 2G
+              ephemeral-storage: 10G
+          volumeMounts:
+            - name: job-config-volume
               mountPath: /opt/
       volumes:
-        - name: config-volume
+        - name: transfer-config-nxf-volume
+          configMap:
+            name: {{ .Release.Name }}-jobconfig
+            items:
+            - key: nxf.config
+              path: nxf.config
+            - key: scm
+              path: scm
+        - name: transfer-config-volume
+          configMap:
+            name: {{ .Release.Name }}-transferconfig              
+        - name: globflow-secrets
+          secret:
+            secretName: {{ .Release.Name }}-globus
+        - name: job-config-volume
           configMap:
             name: {{ .Release.Name }}-jobconfig
       restartPolicy: Never

@@ -3,37 +3,37 @@ kind: ConfigMap
 metadata:
   name: {{ .Release.Name }}-jobconfig
 data:
-  input.json: {{ .Values.json_input | quote }}
+  input.json: {{ .Values.calcWorkflowInput | quote }}
   params.yml: |
-{{- range $key, $value := .Values.job }}
+{{- range $key, $value := .Values.calcJobParams }}
     {{ $key }}: {{ $value }}
 {{- end }}
   nxf.config: |
-    workDir = {{ .Values.nxf.workBucketPath | quote }}
+    workDir = {{ .Values.nxfParams.workBucketPath | quote }}
 
     process {
       executor = "google-batch"
     }
 
     google {
-      project = {{ .Values.nxf.gcpProject | quote }}
-      location = {{ .Values.nxf.location | quote }}
+      project = {{ .Values.nxfParams.gcpProject | quote }}
+      location = {{ .Values.nxfParams.location | quote }}
       batch {
-        spot = {{ .Values.nxf.spot }}
+        spot = {{ .Values.nxfParams.spot }}
       }
     }
 
     wave {
-      enabled = {{ .Values.nxf.wave }}
+      enabled = {{ .Values.nxfParams.wave }}
     }
 
     fusion {
-      enabled =  {{ .Values.nxf.fusion }}
+      enabled =  {{ .Values.nxfParams.fusion }}
     }
 
     tower {
-      accessToken = {{ .Values.towerToken | quote }}
-      workspaceId = {{ .Values.towerId | quote }}
+      accessToken = {{ .Values.secrets.towerToken | quote }}
+      workspaceId = {{ .Values.secrets.towerId | quote }}
       enabled = true
     }
   scm: |

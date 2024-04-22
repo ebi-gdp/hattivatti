@@ -6,33 +6,49 @@ baseImage: "docker.io/nextflow/nextflow"
 dockerTag: "23.10.1"
 pullPolicy: "IfNotPresent"
 
-towerToken: ""
-towerId: ""
-
-
 serviceAccount:
+  create: true
   name: nextflow
 
 # nextflow configuration
-nxf:
-  workBucketPath: "gs://bucket/work" # nxf can't use root bucket, always include a directory
-  gcpProject: "gcp-project-id"
+nxfParams:
+  workBucketPath: "gs://intervene-gcp-nxf/work"
+  gcpProject: "prj-ext-dev-intervene-413412"
   location: "europe-west2"
   spot: false
   wave: true
   fusion: true
 
+# an input file describing the structure of target genomes
+calcWorkflowInput: '[{"sampleset":"hgdp","chrom":null,"vcf_import_dosage":false,"geno":"gs://intervene-gcp-nxf/data/hapnest.pgen","pheno":"gs://intervene-gcp-nxf/data/hapnest.psam","variants":"gs://intervene-gcp-nxf/data/hapnest.pvar","format":"pfile"}]'
+
 # job configuration via a nextflow parameters file
-job:
-  min_overlap: 0.75
+calcJobParams:
+  input: "/opt/input.json"
+  min_overlap: 0
   pgs_id: PGS000802
   pgp_id: null
   trait_efo: null
   target_build: GRCh38
   format: json
-  outdir: "gs://bucket/results" # nxf can't use root bucket, always include a directory
+  outdir: "gs://intervene-gcp-nxf/results"
 
-# an input file describing the structure of target genomes
-# a JSON list described here
-# https://github.com/PGScatalog/pgsc_calc/blob/main/assets/examples/samplesheet.json
-json_input: '[{"sampleset":"hgdp","chrom":null,"vcf_import_dosage":false,"geno":"gs://bucket/hapnest.pgen","pheno":"gs://bucket/hapnest.psam","variants":"gs://bucket/hapnest.pvar","format":"pfile"}]'
+
+globflowInput: '{"dir_path_on_guest_collection":"bwingfield@ebi.ac.uk/test_hapnest/","files":[{"filename":"hapnest.pvar","size":214912210},{"filename":"hapnest.pgen","size":278705850}, {"filename":"hapnest.psam","size":8517}]}'
+
+globflowParams:
+  input: /opt/input.json
+  outdir: "gs://intervene-gcp-nxf/data"
+  config_secrets: /opt/globflow/secrets.properties
+
+# these secrets are never written to a file, they're used to create secrets
+# values are set with --set, using environment variables from the local machine
+# https://stackoverflow.com/a/49930497 
+secrets:
+  GLOBUS_DOMAIN: dummy
+  GLOBUS_CLIENT_ID: dummy
+  GLOBUS_CLIENT_SECRET: dummy
+  GLOBUS_SCOPES: dummy
+  towerToken: dummy
+  towerId: dummy
+
