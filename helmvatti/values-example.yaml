@@ -1,0 +1,38 @@
+# Default values for helmvatti.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+baseImage: "docker.io/nextflow/nextflow"
+dockerTag: "23.10.1"
+pullPolicy: "IfNotPresent"
+
+towerToken: ""
+towerId: ""
+
+
+serviceAccount:
+  name: nextflow
+
+# nextflow configuration
+nxf:
+  workBucketPath: "gs://bucket/work" # nxf can't use root bucket, always include a directory
+  gcpProject: "gcp-project-id"
+  location: "europe-west2"
+  spot: false
+  wave: true
+  fusion: true
+
+# job configuration via a nextflow parameters file
+job:
+  min_overlap: 0.75
+  pgs_id: PGS000802
+  pgp_id: null
+  trait_efo: null
+  target_build: GRCh38
+  format: json
+  outdir: "gs://bucket/results" # nxf can't use root bucket, always include a directory
+
+# an input file describing the structure of target genomes
+# a JSON list described here
+# https://github.com/PGScatalog/pgsc_calc/blob/main/assets/examples/samplesheet.json
+json_input: '[{"sampleset":"hgdp","chrom":null,"vcf_import_dosage":false,"geno":"gs://bucket/hapnest.pgen","pheno":"gs://bucket/hapnest.psam","variants":"gs://bucket/hapnest.pvar","format":"pfile"}]'

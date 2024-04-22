@@ -1,0 +1,13 @@
+apiVersion: v2
+name: helmvatti
+description: A Helm chart for the PGS Catalog Calculator
+
+type: application
+# version of the helm chart
+version: 0.1.0
+# version of the application
+appVersion: "v2.0.0-alpha.5"
+
+serviceAccount:
+  create: true
+  name: nextflow
