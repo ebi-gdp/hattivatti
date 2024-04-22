@@ -1,7 +1,17 @@
+import enum
 from typing import Optional
 
 from pydantic import Field, DirectoryPath
 from pydantic_settings import BaseSettings
+
+
+class K8SNamespace(enum.Enum):
+    DEV = "intervene-dev"
+    TEST = "intervene-test"
+    PROD = "intervene-prod"
+
+    def __str__(self):
+        return str(self.value)
 
 
 class Settings(BaseSettings):
@@ -16,11 +26,19 @@ class Settings(BaseSettings):
     )
     TOWER_TOKEN: str = Field(description="Seqera platform token")
     TOWER_WORKSPACE: str = Field(description="Seqera platform workspace ID")
+    GLOBUS_DOMAIN: str = Field(description="Globus collection domain")
+    GLOBUS_CLIENT_ID: str = Field(description="Globus client ID")
+    GLOBUS_CLIENT_SECRET: str = Field(description="Secret for Globus API")
+    GLOBUS_SCOPES: str = Field(description="Globus scopes")
     GCP_PROJECT: Optional[str] = Field(
         default=None, description="Google Cloud Platform (GCP) project ID"
     )
     GCP_LOCATION: Optional[str] = Field(
         default=None, description="Location to request GCP resources from"
+    )
+    NAMESPACE: K8SNamespace = Field(
+        default=K8SNamespace.DEV,
+        description="Kubernetes namespace to deploy resources to",
     )
 
 

@@ -1,23 +1,15 @@
 # type: ignore
 """This module contains a state machine that represents job states and their transitions"""
 
-import enum
 import logging
 
 from transitions import EventData
 from transitions.extensions.asyncio import AsyncMachine
 
 from .resources import GoogleResourceHandler
+from .jobstates import States
 
 logger = logging.getLogger(__name__)
-
-
-class States(enum.Enum):
-    REQUESTED = "requested"
-    CREATED = "created"
-    DEPLOYED = "deployed"
-    FAILED = "failed"
-    SUCCEEDED = "succeeded"
 
 
 class PolygenicScoreJob(AsyncMachine):
@@ -145,7 +137,7 @@ class PolygenicScoreJob(AsyncMachine):
     async def destroy_resources(self, event: EventData):
         """Delete all resources associated with this job"""
         print(f"deleting all resources: {self.intp_id}")
-        await self.handler.destroy_resources()
+        await self.handler.destroy_resources(state=event.state.value)
 
     async def notify(self, event):
         """Notify the backend about the job state"""

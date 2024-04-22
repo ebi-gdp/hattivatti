@@ -3,11 +3,15 @@
 import abc
 import asyncio
 import logging
+import tempfile
 
-
+import yaml
 from google.cloud import storage
 
 from .jobmodels import JobModel
+from .helm import render_template
+from .config import settings
+from .jobstates import States
 
 logger = logging.getLogger(__name__)
 
@@ -28,10 +32,12 @@ class ResourceHandler(abc.ABC):
         ...
 
     @abc.abstractmethod
-    def destroy_resources(self):
+    def destroy_resources(self, state):
         """Destroy the created resources
 
         Cleaning up properly is very important to keep sensitive data safe
+
+        In the error state all buckets should be cleared up if they weren't already present
         """
         ...
 
@@ -47,10 +53,12 @@ class GoogleResourceHandler(ResourceHandler):
     ):
         super().__init__(intp_id=intp_id.lower())
         self.project_id = project_id
-        self._work_bucket = f"{self.intp_id}-work"
-        self._results_bucket = f"{self.intp_id}-results"
+        self._bucket_root = f"{str(settings.NAMESPACE)}-{self.intp_id}"
+        self._work_bucket = f"{self._bucket_root}-work"
+        self._results_bucket = f"{self._bucket_root}-results"
         self._location = location
         self._work_bucket_existed_on_create = False
+        self._results_bucket_existed_on_create = False
 
     async def create_resources(self, job_model: JobModel):
         """Create some resources to run the job, including:
@@ -61,14 +69,19 @@ class GoogleResourceHandler(ResourceHandler):
         """
 
         self.make_buckets(job_model=job_model)
-        await helm_install(job_model=job_model)
-
-    async def destroy_resources(self):
-        # TODO: if the bucket exists already, we shouldn't destroy it in the error state
-        await helm_uninstall(
-            namespace="intervene-dev", release_name="helmvatti-1712756412"
+        await helm_install(
+            job_model=job_model,
+            work_bucket_path=self._work_bucket,
+            results_bucket_path=self._results_bucket,
         )
-        self._delete_work_bucket()
+
+    async def destroy_resources(self, state):
+        await helm_uninstall(self.project_id)
+
+        if state == States.FAILED:
+            self._delete_buckets(results=True)
+        else:
+            self._delete_buckets(results=False)
 
     def make_buckets(self, job_model: JobModel):
         """Create the buckets needed to run the job"""
@@ -118,6 +131,7 @@ class GoogleResourceHandler(ResourceHandler):
         soft_policy.retention_duration_seconds = 0
         iam = storage.bucket.IAMConfiguration(bucket=bucket)
         iam.public_access_prevention = "enforced"
+        iam.uniform_bucket_level_access_enabled = True
 
         bucket.create(location=self._location)
 
@@ -128,6 +142,7 @@ class GoogleResourceHandler(ResourceHandler):
 
         if bucket.exists():
             logger.critical(f"Bucket {self._results_bucket} exists!")
+            self._results_bucket_existed_on_create = True
             raise FileExistsError
 
         # results stay live for 7 days
@@ -139,10 +154,11 @@ class GoogleResourceHandler(ResourceHandler):
         soft_policy.retention_duration_seconds = 0
         iam = storage.bucket.IAMConfiguration(bucket=bucket)
         iam.public_access_prevention = "enforced"
+        iam.uniform_bucket_level_access_enabled = True
 
         bucket.create(location=self._location)
 
-    def _delete_work_bucket(self):
+    def _delete_buckets(self, results=False):
         # TODO: what if this is slow? it's not async!
         if self._work_bucket_existed_on_create:
             # don't delete a bucket that existed before the job was created
@@ -168,21 +184,28 @@ class GoogleResourceHandler(ResourceHandler):
         logger.info(f"Deleting {bucket}")
         bucket.delete(force=True)
 
+        if results:
+            results_bucket = client.get_bucket(self._results_bucket)
+            results_bucket.delete(force=True)
 
-async def helm_install(job_model: JobModel):
-    if GoogleResourceHandler.dry_run:
-        dry_run = "--dry-run"
-        logger.info("{dry_run} enabled")
-    else:
-        dry_run = ""
 
-    # TODO: add chart path and values file
-    cmd = f"helm # install -n intervene-dev {dry_run}"
-    proc = await asyncio.create_subprocess_shell(
-        cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+async def helm_install(
+    job_model: JobModel, work_bucket_path: str, results_bucket_path: str
+):
+    release_name: str = job_model.pipeline_param.id.lower()
+    template = render_template(
+        job_model,
+        work_bucket_path=work_bucket_path,
+        results_bucket_path=results_bucket_path,
     )
 
-    stdout, stderr = await proc.communicate()
+    with tempfile.NamedTemporaryFile(mode="wt") as temp_f:
+        yaml.dump(template, temp_f)
+        cmd = f"helm install {release_name} {settings.HELM_CHART_PATH} -n {str(settings.NAMESPACE)} -f {temp_f.name}"
+        proc = await asyncio.create_subprocess_shell(
+            cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await proc.communicate()
 
     if proc.returncode != 0:
         logger.critical(f"{stderr.decode()}")
@@ -191,18 +214,8 @@ async def helm_install(job_model: JobModel):
         logger.info("helm install OK")
 
 
-async def helm_render(job_model: JobModel):
-    pass
-
-
-async def helm_uninstall(release_name: str, namespace: str):
-    if GoogleResourceHandler.dry_run:
-        dry_run = "--dry-run"
-        logger.info(f"{dry_run} enabled")
-    else:
-        dry_run = ""
-
-    cmd = f"helm # uninstall --namespace {namespace} {dry_run} {release_name}"
+async def helm_uninstall(release_name: str):
+    cmd = f"helm uninstall --namespace {str(settings.NAMESPACE)} {release_name.lower()}"
 
     proc = await asyncio.create_subprocess_shell(
         cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE

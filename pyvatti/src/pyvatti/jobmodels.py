@@ -6,7 +6,7 @@ from typing import Optional, Self
 
 from pgscatalog.core import GenomeBuild
 
-from pydantic import BaseModel, UUID4, model_validator, field_validator
+from pydantic import BaseModel, model_validator, field_validator, Field
 
 
 class GlobusFile(BaseModel):
@@ -19,7 +19,6 @@ class GlobusFile(BaseModel):
 class GlobusConfig(BaseModel):
     """Details required to stage files from Globus for working on"""
 
-    guest_collection_id: UUID4
     dir_path_on_guest_collection: str
     files: list[GlobusFile]
 
@@ -59,8 +58,8 @@ class SamplesheetFormat(enum.Enum):
 class PGSParams(BaseModel):
     """Runtime parameters for the PGS calculation workflow"""
 
-    pgs_id: Optional[str] = None
-    pgp_id: Optional[str] = None
+    pgs_id: Optional[str] = Field(pattern="PGS[0-9]{6}", default=None)
+    pgp_id: Optional[str] = Field(pattern="PGP[0-9]{6}", default=None)
     trait_efo: Optional[str] = None
     target_build: GenomeBuild
     format: SamplesheetFormat = SamplesheetFormat.JSON

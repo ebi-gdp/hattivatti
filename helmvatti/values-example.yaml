@@ -45,10 +45,9 @@ globflowParams:
 # values are set with --set, using environment variables from the local machine
 # https://stackoverflow.com/a/49930497 
 secrets:
-  GLOBUS_DOMAIN: dummy
-  GLOBUS_CLIENT_ID: dummy
-  GLOBUS_CLIENT_SECRET: dummy
-  GLOBUS_SCOPES: dummy
+  globusDomain: dummy
+  globusClientId: dummy
+  globusClientSecret: dummy
+  globusScopes: dummy
   towerToken: dummy
   towerId: dummy
-
