@@ -1,0 +1,22 @@
+[tool.poetry]
+name = "hattivatti"
+version = "0.1.0"
+description = "A job submitter for the INTERVENE platform"
+authors = ["Benjamin Wingfield <bwingfield@ebi.ac.uk>"]
+license = "Apache-2.0"
+readme = "README.md"
+packages = [
+    { include = "hattivatti", from = "src" },
+]
+
+[tool.poetry.dependencies]
+python = "^3.12"
+fastapi = "^0.110.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.1.1"
+pyright = "^1.1.355"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

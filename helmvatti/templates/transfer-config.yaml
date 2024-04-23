@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-transferconfig
+data:
+  input.json: {{ .Values.globflowInput | quote }}
+  params.yml: |
+{{- range $key, $value := .Values.globflowParams }}
+    {{ $key }}: {{ $value }}
+{{- end }}

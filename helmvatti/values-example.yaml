@@ -1,0 +1,53 @@
+# Default values for helmvatti.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+baseImage: "docker.io/nextflow/nextflow"
+dockerTag: "23.10.1"
+pullPolicy: "IfNotPresent"
+
+serviceAccount:
+  create: true
+  name: nextflow
+
+# nextflow configuration
+nxfParams:
+  workBucketPath: "gs://intervene-gcp-nxf/work"
+  gcpProject: "prj-ext-dev-intervene-413412"
+  location: "europe-west2"
+  spot: false
+  wave: true
+  fusion: true
+
+# an input file describing the structure of target genomes
+calcWorkflowInput: '[{"sampleset":"hgdp","chrom":null,"vcf_import_dosage":false,"geno":"gs://intervene-gcp-nxf/data/hapnest.pgen","pheno":"gs://intervene-gcp-nxf/data/hapnest.psam","variants":"gs://intervene-gcp-nxf/data/hapnest.pvar","format":"pfile"}]'
+
+# job configuration via a nextflow parameters file
+calcJobParams:
+  input: "/opt/input.json"
+  min_overlap: 0
+  pgs_id: PGS000802
+  pgp_id: null
+  trait_efo: null
+  target_build: GRCh38
+  format: json
+  outdir: "gs://intervene-gcp-nxf/results"
+
+
+globflowInput: '{"dir_path_on_guest_collection":"bwingfield@ebi.ac.uk/test_hapnest/","files":[{"filename":"hapnest.pvar","size":214912210},{"filename":"hapnest.pgen","size":278705850}, {"filename":"hapnest.psam","size":8517}]}'
+
+globflowParams:
+  input: /opt/input.json
+  outdir: "gs://intervene-gcp-nxf/data"
+  config_secrets: /opt/globflow/secrets.properties
+
+# these secrets are never written to a file, they're used to create secrets
+# values are set with --set, using environment variables from the local machine
+# https://stackoverflow.com/a/49930497 
+secrets:
+  globusDomain: dummy
+  globusClientId: dummy
+  globusClientSecret: dummy
+  globusScopes: dummy
+  towerToken: dummy
+  towerId: dummy

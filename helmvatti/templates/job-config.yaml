@@ -1,0 +1,45 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-jobconfig
+data:
+  input.json: {{ .Values.calcWorkflowInput | quote }}
+  params.yml: |
+{{- range $key, $value := .Values.calcJobParams }}
+    {{ $key }}: {{ $value }}
+{{- end }}
+  nxf.config: |
+    workDir = {{ .Values.nxfParams.workBucketPath | quote }}
+
+    process {
+      executor = "google-batch"
+    }
+
+    google {
+      project = {{ .Values.nxfParams.gcpProject | quote }}
+      location = {{ .Values.nxfParams.location | quote }}
+      batch {
+        spot = {{ .Values.nxfParams.spot }}
+      }
+    }
+
+    wave {
+      enabled = {{ .Values.nxfParams.wave }}
+    }
+
+    fusion {
+      enabled =  {{ .Values.nxfParams.fusion }}
+    }
+
+    tower {
+      accessToken = {{ .Values.secrets.towerToken | quote }}
+      workspaceId = {{ .Values.secrets.towerId | quote }}
+      enabled = true
+    }
+  scm: |
+    providers {
+      ebi {
+        server = 'https://gitlab.ebi.ac.uk'
+        platform = 'gitlab'
+      }
+    }
