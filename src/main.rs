@@ -12,7 +12,7 @@
 #![warn(missing_docs)]
 
 use std::fs;
-use std::path::{PathBuf};
+use std::path::PathBuf;
 
 use clap::Parser;
 use log::info;
@@ -20,11 +20,13 @@ use rusqlite::Connection;
 
 use crate::db::ingest::message::ingest_message;
 use crate::db::job::load::get_valid_jobs;
+use crate::namespace::PlatformNamespace;
 use crate::slurm::job_request::JobRequest;
 
 mod db;
 mod request;
 mod slurm;
+mod namespace;
 
 #[derive(Parser, Debug)]
 #[command(name = "hattivatti")]
@@ -48,7 +50,13 @@ struct Args {
     dry_run: bool,
     /// Path to the globus file handler jar
     #[arg(short, long)]
-    globus_jar_path: PathBuf
+    globus_jar_path: PathBuf,
+    /// Which platform namespace do you want to deploy to? [dev, test, prod]
+    #[arg(short, long, value_enum)]
+    namespace: PlatformNamespace,
+    /// Path to the workflow monitor binary (installed in a venv)
+    #[arg(long)]
+    workflow_monitor_path: PathBuf,
 }
 
 /// A directory for storing working data
@@ -70,7 +78,9 @@ async fn main() {
     info!("terve! starting up :)");
 
     let args = Args::parse();
-    let wd = WorkingDirectory { path: args.work_dir };
+
+    let wd = WorkingDirectory { path: args.work_dir.join(args.namespace.to_string()) };
+    info!("Setting work directory to: {:?}", &wd.path);
     fs::create_dir_all(&wd.path).expect("Can't create working directory");
 
     let conn: Connection = db::open::open_db(&wd)
@@ -78,7 +88,7 @@ async fn main() {
 
     let schema = request::schema::load_schema(args.schema_dir.as_path());
     let s3_client = request::message::make_allas_client();
-    let messages = request::message::fetch_all(&s3_client, &schema).await;
+    let messages = request::message::fetch_all(&s3_client, &schema, &args.namespace).await;
 
     if let Some(messages) = messages {
         for message in messages {
@@ -98,7 +108,7 @@ async fn main() {
 
     if let Some(jobs) = jobs {
         for job in jobs {
-            let job_path = job.create(&wd, &args.globus_jar_path);
+            let job_path = job.create(&wd, &args.globus_jar_path, &args.namespace, &args.workflow_monitor_path);
             if !args.dry_run {
                 job.stage(&conn);
                 job.submit(&conn, job_path);

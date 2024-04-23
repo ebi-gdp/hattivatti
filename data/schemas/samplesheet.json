@@ -101,8 +101,7 @@
     },
     "required": [
       "sampleset",
-      "chrom",
-      "pgen"
+      "chrom"
     ],
     "dependentRequired": {
       "pgen": [

@@ -10,16 +10,21 @@ pub struct PipelineParam {
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct TargetGenome {
-    pvar: String,
-    pgen: String,
-    psam: String,
+    pvar: Option<String>,
+    pgen: Option<String>,
+    psam: Option<String>,
+    bed: Option<String>,
+    bim: Option<String>,
+    fam: Option<String>,
+    vcf: Option<String>,
     sampleset: String,
     chrom: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct NxfParamsFile {
-    pgs_id: String,
+    pgs_id: Option<String>,
+    trait_efo: Option<String>,
     format: String,
     target_build: String,
 }

@@ -6,6 +6,7 @@ use log::{info, warn};
 use rusoto_s3::S3;
 use serde_json::Value;
 use tokio::io::AsyncReadExt;
+use crate::namespace::PlatformNamespace;
 
 /// Create an s3 client capable of connecting to Allas
 ///
@@ -41,13 +42,13 @@ pub struct AllasMessage {
 }
 
 /// Fetch all messages in the work queue on Allas
-pub async fn fetch_all(s3_client: &rusoto_s3::S3Client, schema: &JSONSchema) -> Option<Vec<AllasMessage>> {
-    let bucket = "intervene-dev";
+pub async fn fetch_all(s3_client: &rusoto_s3::S3Client, schema: &JSONSchema, namespace: &PlatformNamespace) -> Option<Vec<AllasMessage>> {
+    let bucket = format!("intervene-{namespace}");
     let prefix = "job-queue";
     info!("Checking Allas queue {bucket}/{prefix} for new messages");
 
     let list_request = rusoto_s3::ListObjectsV2Request {
-        bucket: bucket.into(),
+        bucket: bucket.clone(),
         prefix: Some(prefix.into()),
         ..Default::default()
     };
@@ -66,7 +67,7 @@ pub async fn fetch_all(s3_client: &rusoto_s3::S3Client, schema: &JSONSchema) -> 
             for object in objects {
                 let key = object.key.unwrap();
                 info!("Object key: {}", key);
-                let content = read_job(&s3_client, bucket, &key).await;
+                let content = read_job(&s3_client, &bucket, &key).await;
                 // info!("Object content: {content}");
                 jobs.push(AllasMessage::new(content,
                                             bucket.to_string(),
