@@ -1,0 +1,45 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "hattivatti.fullname" . }}
+  labels:
+    {{- include "hattivatti.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "hattivatti.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "hattivatti.labels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "hattivatti.serviceAccountName" . }}
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port }}
+              protocol: TCP
+          resources:
+              requests:
+                cpu: 500m
+                ephemeral-storage: 1Gi
+                memory: 512Mi
+          env:
+          {{- range $envVarName, $secretKey := .Values.envMapping }}
+          - name: {{ $envVarName }}
+            valueFrom:
+              secretKeyRef:
+                name: {{ $.Release.Name }}-secrets
+                key: {{ $envVarName }}
+          {{- end }}
