@@ -22,7 +22,13 @@ COPY --from=build ${VIRTUAL_ENV} ${VIRTUAL_ENV}
 
 COPY pyvatti /app/pyvatti
 
-ADD helmvatti /opt/
+ADD pyvatti/helmvatti /opt/helmvatti
+
+ENV HELM_CHART_PATH=/opt/helmvatti
+
+RUN apt-get update \
+ && apt-get install -y curl \
+ && curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
 
 WORKDIR /app/
 
