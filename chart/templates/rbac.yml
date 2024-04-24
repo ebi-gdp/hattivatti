@@ -6,11 +6,11 @@ metadata:
 rules:
 - apiGroups: [""]
   resources: ["serviceaccounts", "configmaps", "pods", "secrets"]
-  verbs: ["get", "create", "list", "delete"]
+  verbs: ["*"]
 - apiGroups: ["batch"]
   resources: ["jobs"]
-  verbs: ["get", "create", "list", "delete"]  
----
+  verbs: ["*"]
+---  
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
