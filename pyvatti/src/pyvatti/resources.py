@@ -76,7 +76,7 @@ class GoogleResourceHandler(ResourceHandler):
         )
 
     async def destroy_resources(self, state):
-        await helm_uninstall(self.project_id)
+        await helm_uninstall(self.intp_id)
 
         if state == States.FAILED:
             self._delete_buckets(results=True)
