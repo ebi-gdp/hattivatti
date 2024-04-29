@@ -22,7 +22,7 @@ class ResourceHandler(abc.ABC):
         self.intp_id = intp_id
 
     @abc.abstractmethod
-    def create_resources(self, job_model: JobModel):
+    async def create_resources(self, job_model: JobModel):
         """Create the compute resources needed to run a job
 
         For example:
@@ -32,7 +32,7 @@ class ResourceHandler(abc.ABC):
         ...
 
     @abc.abstractmethod
-    def destroy_resources(self, state):
+    async def destroy_resources(self, state):
         """Destroy the created resources
 
         Cleaning up properly is very important to keep sensitive data safe
@@ -59,6 +59,7 @@ class GoogleResourceHandler(ResourceHandler):
         self._location = location
         self._work_bucket_existed_on_create = False
         self._results_bucket_existed_on_create = False
+        self._helm_installed = False
 
     async def create_resources(self, job_model: JobModel):
         """Create some resources to run the job, including:
@@ -69,14 +70,20 @@ class GoogleResourceHandler(ResourceHandler):
         """
 
         self.make_buckets(job_model=job_model)
-        await helm_install(
-            job_model=job_model,
-            work_bucket_path=self._work_bucket,
-            results_bucket_path=self._results_bucket,
-        )
+        try:
+            await helm_install(
+                job_model=job_model,
+                work_bucket_path=self._work_bucket,
+                results_bucket_path=self._results_bucket,
+            )
+        except ValueError:
+            self._helm_installed = False
+        else:
+            self._helm_installed = True
 
     async def destroy_resources(self, state):
-        await helm_uninstall(self.intp_id)
+        if self._helm_installed:
+            await helm_uninstall(self.intp_id)
 
         if state == States.FAILED:
             self._delete_buckets(results=True)
@@ -94,7 +101,7 @@ class GoogleResourceHandler(ResourceHandler):
         The work bucket has much stricter lifecycle policies than the results bucket
         """
         client = storage.Client(project=self.project_id)
-        bucket: storage.bucket.Bucket = client.bucket(self._work_bucket)
+        bucket: storage.Bucket = client.bucket(self._work_bucket)
 
         if bucket.exists():
             logger.critical(f"Bucket {self._work_bucket} exists!")
@@ -138,7 +145,7 @@ class GoogleResourceHandler(ResourceHandler):
     def _make_results_bucket(self, job_model: JobModel):
         """Unfortunately the google storage library doesn't support async"""
         client = storage.Client(project=self.project_id)
-        bucket: storage.bucket.Bucket = client.bucket(self._results_bucket)
+        bucket: storage.Bucket = client.bucket(self._results_bucket)
 
         if bucket.exists():
             logger.critical(f"Bucket {self._results_bucket} exists!")
@@ -186,6 +193,7 @@ class GoogleResourceHandler(ResourceHandler):
 
         if results:
             results_bucket = client.get_bucket(self._results_bucket)
+            logger.info(f"Deleting {results_bucket}")
             results_bucket.delete(force=True)
 
 

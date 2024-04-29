@@ -1,7 +1,7 @@
 import enum
 from typing import Optional
 
-from pydantic import Field, DirectoryPath
+from pydantic import Field, DirectoryPath, AnyHttpUrl
 from pydantic_settings import BaseSettings
 
 
@@ -39,6 +39,12 @@ class Settings(BaseSettings):
     NAMESPACE: K8SNamespace = Field(
         default=K8SNamespace.DEV,
         description="Kubernetes namespace to deploy resources to",
+    )
+    NOTIFY_URL: AnyHttpUrl = Field(description="Backend notification URL")
+    POLL_INTERVAL: int = Field(
+        gt=0,
+        default=60,
+        description="Number of seconds to wait before polling Seqera platform API",
     )
 
 

@@ -1,7 +1,7 @@
 import asyncio
 import shutil
 from contextlib import asynccontextmanager
-import datetime
+from datetime import datetime, timezone
 
 from fastapi import FastAPI, BackgroundTasks, HTTPException
 import logging
@@ -9,11 +9,12 @@ import shelve
 
 from starlette import status
 
-from .job import PolygenicScoreJob
+from .job import PolygenicScoreJob, update_job_state
 from .jobmodels import JobModel
-from .logmodels import LogMessage, LogEvent, MonitorMessage, SummaryTrace
 from .config import settings
 from . import CLIENT, SHELF_LOCK, SHELF_PATH, TEMP_DIR
+from .monitor import API_ROOT, get_headers, SeqeraLog
+
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -22,8 +23,16 @@ logger.setLevel(logging.INFO)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     yield
+
+    async with SHELF_LOCK:
+        with shelve.open(SHELF_PATH) as db:
+            for job_id, job_instance in db.items():
+                logger.warning(f"{job_id} active while shutting down, erroring")
+                await update_job_state(workflow_id=job_id, trigger="error")
+
     shutil.rmtree(TEMP_DIR)
     logger.info(f"Cleaned up {SHELF_PATH}")
+
     # close the connection pool
     await CLIENT.aclose()
     logger.info("Closed httpx thread pool")
@@ -44,27 +53,6 @@ async def launch_job(job_model: JobModel):
             db[id] = job_instance
 
 
-async def timeout_job(job_id: str):
-    """Background task to check if a job is still on the shelf after a timeout.
-
-    If it is, trigger the error state, which will force a cleanup and notify the backend"""
-    logger.info(f"Async timeout for {settings.TIMEOUT_SECONDS}s started for {job_id}")
-    await asyncio.sleep(settings.TIMEOUT_SECONDS)
-
-    async with SHELF_LOCK:
-        with shelve.open(SHELF_PATH) as db:
-            job_instance: PolygenicScoreJob = db.get(job_id, None)
-
-    if job_instance is not None:
-        logger.warning(f"{job_id} timed out, triggering error state")
-        message = MonitorMessage(
-            run_name=job_id, utc_time=datetime.datetime.now(), event=LogEvent.ERROR
-        )
-        await update_job_state("error", message=message, delete=True)
-    else:
-        logger.info(f"Timeout for {job_id} expired (it succeeded or failed)")
-
-
 @app.post("/launch", status_code=status.HTTP_201_CREATED)
 async def launch(job: JobModel, background_tasks: BackgroundTasks):
     with shelve.open(SHELF_PATH) as db:
@@ -75,51 +63,46 @@ async def launch(job: JobModel, background_tasks: BackgroundTasks):
             )
 
     background_tasks.add_task(launch_job, job)
-    background_tasks.add_task(timeout_job, job.pipeline_param.id)
+    background_tasks.add_task(monitor_job, job.pipeline_param.id)
     return {"id": job.pipeline_param.id}
 
 
-@app.post("/monitor", status_code=status.HTTP_200_OK)
-async def monitor(message: LogMessage):
-    match message.event:
-        case LogEvent.STARTED:
-            message = MonitorMessage(
-                run_name=message.runName, utc_time=message.utcTime, event=message.event
-            )
-            # await update_job_state("deploy", message)
-        case LogEvent.COMPLETED:
-            message = MonitorMessage(
-                run_name=message.runName, utc_time=message.utcTime, event=message.event
-            )
-            await update_job_state("succeed", message, delete=True)
-        case LogEvent.ERROR:
-            # trace is only generated for this event
-            if message.trace is not None:
-                trace = SummaryTrace(
-                    trace_exit=message.trace["exit"],
-                    trace_name=message.trace["process"],
-                )
-            else:
-                trace = None
-            message = MonitorMessage(
-                run_name=message.runName,
-                utc_time=message.utcTime,
-                event=message.event,
-                trace=trace,
-            )
-            await update_job_state("error", message, delete=True)
+async def monitor_job(workflow_id):
+    """Monitor jobs using the Seqera API and update internal job state
 
+    Updating job states will trigger notifications and the destruction of resources"""
+    params = {
+        "workspaceId": settings.TOWER_WORKSPACE,
+        "search": f"{settings.NAMESPACE}-{workflow_id}",
+    }
+    log = None
+    time_started = datetime.now(timezone.utc)
 
-async def update_job_state(state, message: MonitorMessage, delete=False):
-    with shelve.open(SHELF_PATH) as db:
-        job_instance: PolygenicScoreJob = db[message.run_name]
+    while True:
+        await asyncio.sleep(settings.POLL_INTERVAL)
 
-    logger.info(f"Triggering state {state}")
-    await job_instance.trigger(state, client=CLIENT, message=message)
+        time_s: int = (datetime.now(timezone.utc) - time_started).seconds
+        if time_s > settings.TIMEOUT_SECONDS:
+            logger.warning(f"Timeout exceeded for {workflow_id}")
+            await update_job_state(workflow_id=workflow_id, trigger="error")
+            break
 
-    async with SHELF_LOCK:
-        with shelve.open(SHELF_PATH) as db:
-            if not delete:
-                db[message.run_name] = job_instance
-            else:
-                db.pop(message.run_name)
+        logger.info(f"Polling API {workflow_id}")
+        response = await CLIENT.get(
+            f"{API_ROOT}/workflow", headers=get_headers(), params=params
+        )
+        new_log: SeqeraLog = SeqeraLog.from_response(response)
+
+        if new_log is None:
+            logger.info(f"No log found yet for {workflow_id}")
+            continue
+
+        if log != new_log:
+            logger.info("Job state update detected")
+            log = new_log
+            job_state = log.get_job_state()
+            await update_job_state(trigger=job_state, workflow_id=workflow_id)
+            if job_state == "error" or job_state == "succeed":
+                break
+
+    logger.info(f"Monitoring stopped for {workflow_id}")

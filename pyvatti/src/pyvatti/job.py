@@ -2,9 +2,16 @@
 """This module contains a state machine that represents job states and their transitions"""
 
 import logging
+import shelve
+from datetime import timezone, datetime
+from typing import Optional
 
 from transitions import EventData
 from transitions.extensions.asyncio import AsyncMachine
+
+from . import SHELF_PATH, CLIENT, SHELF_LOCK
+from .config import settings
+from .monitor import BackendStatusMessage
 
 from .resources import GoogleResourceHandler
 from .jobstates import States
@@ -139,9 +146,46 @@ class PolygenicScoreJob(AsyncMachine):
         print(f"deleting all resources: {self.intp_id}")
         await self.handler.destroy_resources(state=event.state.value)
 
-    async def notify(self, event):
+    async def notify(self, event: Optional[EventData]):
         """Notify the backend about the job state"""
         print(f"sending state notification: {self.state}")
+        if event is not None:
+            # TODO: grab event data
+            utc_time = datetime.now(timezone.utc)
+        else:
+            utc_time = datetime.now(timezone.utc)
+
+        msg = BackendStatusMessage(
+            run_name=self.intp_id, utc_time=utc_time, event=self.state
+        )
+        notify_url = f"{settings.NOTIFY_URL}/pipeline/{msg.run_name}/status"
+        response = await CLIENT.post(url=notify_url, data=msg.dict())
+
+        if response.status_code == 200:
+            logger.info(f"Notification success: {msg}")
+        else:
+            logger.warning(f"Notification failed: {msg}")
 
     def __repr__(self):
         return f"{self.__class__.__name__}(id={self.intp_id!r})"
+
+
+async def update_job_state(workflow_id: str, trigger: str):
+    with shelve.open(SHELF_PATH) as db:
+        job_instance: PolygenicScoreJob = db[workflow_id]
+
+    logger.info(f"Triggering state {trigger}")
+    await job_instance.trigger(trigger, client=CLIENT)
+
+    match trigger:
+        case "succeed" | "error":
+            delete = True
+        case _:
+            delete = False
+
+    async with SHELF_LOCK:
+        with shelve.open(SHELF_PATH) as db:
+            if not delete:
+                db[workflow_id] = job_instance
+            else:
+                db.pop(workflow_id)

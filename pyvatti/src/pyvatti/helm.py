@@ -97,6 +97,7 @@ class HelmValues(BaseModel, validate_assignment=True):
     nxfParams: NextflowParams
     # a JSON string
     calcWorkflowInput: str
+
     calcJobParams: CalcJobParams
     # a JSON string
     globflowInput: str

@@ -7,3 +7,6 @@ class States(enum.Enum):
     DEPLOYED = "deployed"
     FAILED = "failed"
     SUCCEEDED = "succeeded"
+
+    def __str__(self):
+        return str(self.value)

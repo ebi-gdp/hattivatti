@@ -3,6 +3,7 @@ kind: Job
 metadata:
   name: {{ .Release.Name }}
 spec:
+  ttlSecondsAfterFinished: 100
   backoffLimit: 0
   template:
     metadata:
@@ -20,7 +21,7 @@ spec:
               value: /opt/nxf/scm
           resources:
             requests:
-              cpu: 1
+              cpu: "1"
               memory: 2G
               ephemeral-storage: 10G
           volumeMounts:
@@ -35,13 +36,15 @@ spec:
         - name: pgsc-calc
           image: {{ .Values.baseImage }}:{{ .Values.dockerTag }}
           imagePullPolicy: {{ .Values.pullPolicy }}
-          command: ['sh', '-c', "nextflow run https://gitlab.ebi.ac.uk/gdp-public/pgsc_calc.git -r {{ .Chart.AppVersion }} -params-file /opt/params.yml -c /opt/nxf.config"]
+          command: ['sh', '-c', "nextflow run -name ${WORKFLOW_ID} https://gitlab.ebi.ac.uk/gdp-public/pgsc_calc.git -r {{ .Chart.AppVersion }} -params-file /opt/params.yml -c /opt/nxf.config"]
           env:
+            - name: WORKFLOW_ID
+              value: {{ .Release.Namespace }}-{{ .Release.Name }}
             - name: NXF_SCM_FILE
               value: /opt/scm
           resources:
             requests:
-              cpu: 1
+              cpu: "1"
               memory: 2G
               ephemeral-storage: 10G
           volumeMounts:
