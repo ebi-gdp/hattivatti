@@ -76,7 +76,6 @@ class PolygenicScoreJob(AsyncMachine):
             "trigger": "deploy",
             "source": States.CREATED,
             "dest": States.DEPLOYED,
-            "after": ["notify"],
         },
         {
             "trigger": "succeed",
