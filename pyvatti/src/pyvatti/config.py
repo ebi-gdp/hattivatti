@@ -46,6 +46,7 @@ class Settings(BaseSettings):
         default=60,
         description="Number of seconds to wait before polling Seqera platform API",
     )
+    NOTIFY_TOKEN: str = Field(description="Token for backend notifications")
 
 
 settings = Settings()

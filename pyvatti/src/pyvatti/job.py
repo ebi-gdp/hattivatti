@@ -3,7 +3,9 @@
 
 import logging
 import shelve
+import urllib.parse
 from datetime import timezone, datetime
+from functools import lru_cache
 from typing import Optional
 
 from transitions import EventData
@@ -70,12 +72,13 @@ class PolygenicScoreJob(AsyncMachine):
             "trigger": "create",
             "source": States.REQUESTED,
             "dest": States.CREATED,
-            "prepare": ["create_resources", "notify"],
+            "prepare": ["create_resources"],
         },
         {
             "trigger": "deploy",
             "source": States.CREATED,
             "dest": States.DEPLOYED,
+            "after": ["notify"],
         },
         {
             "trigger": "succeed",
@@ -157,8 +160,12 @@ class PolygenicScoreJob(AsyncMachine):
         msg = BackendStatusMessage(
             run_name=self.intp_id, utc_time=utc_time, event=self.state
         )
-        notify_url = f"{settings.NOTIFY_URL}/pipeline/{msg.run_name}/status"
-        response = await CLIENT.post(url=notify_url, data=msg.dict())
+
+        url = f"bff/pipeline-manager/integration/pipeline/{msg.run_name}/status"
+        notify_url = urllib.parse.urljoin(str(settings.NOTIFY_URL), url)
+        response = await CLIENT.patch(
+            url=notify_url, data=msg.dict(), headers=notify_headers()
+        )
 
         if response.status_code == 200:
             logger.info(f"Notification success: {msg}")
@@ -188,3 +195,11 @@ async def update_job_state(workflow_id: str, trigger: str):
                 db[workflow_id] = job_instance
             else:
                 db.pop(workflow_id)
+
+
+@lru_cache
+def notify_headers():
+    return {
+        "Content-Type": "application/json",
+        "Authorization": f"Basic {settings.NOTIFY_TOKEN}",
+    }

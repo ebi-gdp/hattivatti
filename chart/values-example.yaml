@@ -32,3 +32,16 @@ secrets:
   globusScopes: dummy
   towerToken: dummy
   towerId: dummy
+  notifyURL: dummy
+  notifyToken: dummy
+
+# map environment variable names to yaml secret keys
+envMapping:
+  TOWER_TOKEN: "towerToken"
+  TOWER_WORKSPACE: "towerId"
+  GLOBUS_DOMAIN: "globusDomain"
+  GLOBUS_CLIENT_ID: "globusClientId"
+  GLOBUS_CLIENT_SECRET: "globusClientSecret"
+  GLOBUS_SCOPES: "globusScopes"
+  NOTIFY_URL: "notifyURL"
+  NOTIFY_TOKEN: "notifyToken"
