@@ -164,7 +164,7 @@ class PolygenicScoreJob(AsyncMachine):
         url = f"bff/pipeline-manager/integration/pipeline/{msg.run_name}/status"
         notify_url = urllib.parse.urljoin(str(settings.NOTIFY_URL), url)
         response = await CLIENT.patch(
-            url=notify_url, data=msg.dict(), headers=notify_headers()
+            url=notify_url, data=msg.json(), headers=notify_headers()
         )
 
         if response.status_code == 200:
@@ -181,20 +181,24 @@ async def update_job_state(workflow_id: str, trigger: str):
         job_instance: PolygenicScoreJob = db[workflow_id]
 
     logger.info(f"Triggering state {trigger}")
-    await job_instance.trigger(trigger, client=CLIENT)
 
-    match trigger:
-        case "succeed" | "error":
-            delete = True
-        case _:
-            delete = False
+    try:
+        await job_instance.trigger(trigger, client=CLIENT)
+    except Exception:
+        await update_job_state(workflow_id=workflow_id, trigger="error")
+    else:
+        match trigger:
+            case "succeed" | "error":
+                delete = True
+            case _:
+                delete = False
 
-    async with SHELF_LOCK:
-        with shelve.open(SHELF_PATH) as db:
-            if not delete:
-                db[workflow_id] = job_instance
-            else:
-                db.pop(workflow_id)
+        async with SHELF_LOCK:
+            with shelve.open(SHELF_PATH) as db:
+                if not delete:
+                    db[workflow_id] = job_instance
+                else:
+                    db.pop(workflow_id)
 
 
 @lru_cache
