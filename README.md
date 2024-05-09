@@ -13,13 +13,27 @@ The main component is `pyvatti`, a FastAPI application that sets up a standard A
 
 PGS Catalog Calculator jobs are installed to the local Kubernetes cluster as Job objects, but compute happens externally (Cloud Batch / SLURM).
 
+## Configuration and deployment
+
+Configuring the FastAPI application requires some environment variables to be set. See [pyvatti/src/pyvatti/config.py](https://github.com/ebi-gdp/hattivatti/blob/main/pyvatti/src/pyvatti/config.py) for a description.
+
+Set these variables in the helm values file [chart/values-example.yaml](https://github.com/ebi-gdp/hattivatti/blob/main/chart/values-example.yaml).
+
+And run:
+
+```
+$ helm install hattivatti . -n <namespace> -f <path_to_values.yaml>
+```
+
 ## Deploying jobs with Google Cloud Platform
 
 ```mermaid
 sequenceDiagram
     Backend->>pyvatti: Launch a job please
     pyvatti->>Backend: Done
+    create participant Cloud Storage
     pyvatti->>Cloud Storage: Make buckets
+    create participant Nextflow Job
     pyvatti->>Nextflow Job: helm install nextflow Job (GKE)
     Nextflow Job->>Cloud Batch: Launch workers
     Nextflow Job->>Seqera:Monitoring
@@ -29,8 +43,10 @@ sequenceDiagram
     end
     Seqera->>pyvatti:Job status: success
     pyvatti->>Backend:Notify
+    destroy Nextflow Job
     pyvatti->>Nextflow Job:helm uninstall
-    pyvatti->>Cloud Storage:Clean up    
+    destroy Cloud Storage
+    pyvatti->>Cloud Storage:Clean up
 ```
 
 The basic idea is that the python application:
