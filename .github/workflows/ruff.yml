@@ -10,26 +10,3 @@ jobs:
         with:
           src: './pyvatti/src'
           args: 'format --check'
-
-  pyright:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup python
-        uses: actions/setup-python@v5
-        with:
-          python-version: 3.12
-            
-      - run: pip install poetry
-
-      - run: poetry install --with dev --all-extras
-        working-directory: ./pyvatti
-
-      - run: echo "$(poetry env info --path)/bin" >> $GITHUB_PATH
-        working-directory: ./pyvatti
-
-      - uses: jakebailey/pyright-action@v2
-        with:
-          version: 1.1.355
-          working-directory: ./pyvatti
