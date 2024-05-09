@@ -20,14 +20,9 @@ pydantic-settings = "^2.2.1"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.1.1"
-pyright = "^1.1.355"
-
 
 [tool.poetry.group.standard.dependencies]
 uvicorn = "^0.29.0"
-
-[tool.pyright]
-venv = ".venv"
 
 [build-system]
 requires = ["poetry-core"]
