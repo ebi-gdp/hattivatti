@@ -1,36 +1,38 @@
 {
-	"pipeline_param": {
-		"id": "INTP00000000322",
-		"target_genomes": [{
-			"variants": "hapnest.pvar",
-			"geno": "hapnest.pgen",
-			"pheno": "hapnest.psam",
-			"sampleset": "testtest",
-			"format": "pfile", 
-			"chrom": null
-		}],
-		"nxf_params_file": {
-			"pgs_id": "PGS001229",
-			"format": "json",
-			"target_build": "GRCh38"
-		},
-		"nxf_work": "/workspace/work/"
-	},
-	"globus_details": {
-		"guest_collection_id": "c1e6310c-11d5-4e8a-9443-211884f04c6f",
-		"dir_path_on_guest_collection": "bwingfield@ebi.ac.uk/INTP00000000322",
-		"files": [{
-				"filename": "hapnest.pvar",
-				"size": 7
-			},
-			{
-				"filename": "hapnest.pgen",
-				"size": 8
-			},
-			{
-				"filename": "hapnest.psam",
-				"size": 9
-			}
-		]
-	}
+    "pipeline_param": {
+        "target_genomes": [
+            {
+                "pheno": "hapnest.psam",
+                "vcf_import_dosage": false,
+                "variants": "hapnest.pvar",
+                "geno": "hapnest.pgen",
+                "sampleset": "test",
+                "chrom": null,
+                "format": "pfile"
+            }
+        ],
+        "nxf_params_file": {
+            "pgs_id": "PGS001229",
+            "format": "json",
+            "target_build": "GRCh38"
+        },
+        "id": "INTP00000000028"
+    },
+    "globus_details": {
+        "dir_path_on_guest_collection": "bwingfield@ebi.ac.uk/hapnestgcp/",
+        "files": [
+            {
+                "filename": "hapnest.pgen",
+                "size": 278705850
+            },
+            {
+                "filename": "hapnest.psam",
+                "size": 8517
+            },
+            {
+                "filename": "hapnest.pvar",
+                "size": 214912210
+            }
+        ]
+    }
 }
