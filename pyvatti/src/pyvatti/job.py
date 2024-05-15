@@ -131,7 +131,7 @@ class PolygenicScoreJob(AsyncMachine):
             states=states,
             initial=States.REQUESTED,
             transitions=self.transitions,
-            on_exception=self.handle_error(),
+            on_exception=self.handle_error,
             send_event=True,
         )
 
