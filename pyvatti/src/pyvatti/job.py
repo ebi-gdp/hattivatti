@@ -8,6 +8,7 @@ from datetime import timezone, datetime
 from functools import lru_cache
 from typing import Optional
 
+import transitions
 from transitions import EventData
 from transitions.extensions.asyncio import AsyncMachine
 
@@ -130,18 +131,21 @@ class PolygenicScoreJob(AsyncMachine):
             states=states,
             initial=States.REQUESTED,
             transitions=self.transitions,
+            on_exception=self.handle_error(),
             send_event=True,
         )
+
+    def handle_error(self):
+        logger.warning(f"Exception raised for {self.intp_id}")
+        try:
+            self.trigger("error")
+        except transitions.MachineError:
+            logger.warning(f"Couldn't trigger error state for {self.intp_id}")
 
     async def create_resources(self, event: EventData):
         """Create resources required to start the job"""
         print("creating resources")
-        try:
-            await self.handler.create_resources(job_model=event.kwargs["job_model"])
-        except Exception as e:
-            logger.warning(f"Something went wrong, {self.intp_id} entering error state")
-            await self.error()
-            raise Exception from e
+        await self.handler.create_resources(job_model=event.kwargs["job_model"])
 
     async def destroy_resources(self, event: EventData):
         """Delete all resources associated with this job"""
@@ -182,23 +186,19 @@ async def update_job_state(workflow_id: str, trigger: str):
 
     logger.info(f"Triggering state {trigger}")
 
-    try:
-        await job_instance.trigger(trigger, client=CLIENT)
-    except Exception:
-        await update_job_state(workflow_id=workflow_id, trigger="error")
-    else:
-        match trigger:
-            case "succeed" | "error":
-                delete = True
-            case _:
-                delete = False
+    await job_instance.trigger(trigger, client=CLIENT)
+    match trigger:
+        case "succeed" | "error":
+            delete = True
+        case _:
+            delete = False
 
-        async with SHELF_LOCK:
-            with shelve.open(SHELF_PATH) as db:
-                if not delete:
-                    db[workflow_id] = job_instance
-                else:
-                    db.pop(workflow_id)
+    async with SHELF_LOCK:
+        with shelve.open(SHELF_PATH) as db:
+            if not delete:
+                db[workflow_id] = job_instance
+            else:
+                db.pop(workflow_id)
 
 
 @lru_cache
