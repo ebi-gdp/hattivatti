@@ -5,16 +5,14 @@ It's assumed input parameters are validated by JobModels. This module aims to mo
 validate generated job configuration, like work bucket names.
 """
 
-import json
 import pathlib
 from functools import lru_cache
 from typing import Optional
 
 import yaml
 from pydantic import BaseModel, Field, field_validator
-from fastapi.encoders import jsonable_encoder
-from .config import settings
-from .jobmodels import JobModel
+from pyvatti.config import settings
+from pyvatti.models import JobRequest
 
 
 @lru_cache
@@ -125,7 +123,7 @@ def _add_bucket_path(job, bucketPath):
 
 
 def render_template(
-    job: JobModel, work_bucket_path: str, results_bucket_path: str
+    job: JobRequest, work_bucket_path: str, results_bucket_path: str
 ) -> dict:
     """Render the helm template using new values from the job model"""
     _add_bucket_path(job, work_bucket_path)
@@ -138,14 +136,12 @@ def render_template(
     job_values.nxfParams.workBucketPath = f"gs://{work_bucket_path}/work"
     job_values.calcJobParams.outdir = f"gs://{results_bucket_path}/results"
 
-    job_values.calcWorkflowInput = json.dumps(
-        job.pipeline_param.target_genomes, default=jsonable_encoder
-    ).replace("\n", "")
-    job_values.globflowInput = job.globus_details.json()
+    job_values.calcWorkflowInput = job.pipeline_param.target_genome.model_dump_json()
+    job_values.globflowInput = job.globus_details.model_dump_json()
 
     for x in ("pgs_id", "pgp_id", "trait_efo", "target_build"):
         setattr(
             job_values.calcJobParams, x, getattr(job.pipeline_param.nxf_params_file, x)
         )
 
-    return job_values.dict()
+    return job_values.model_dump()

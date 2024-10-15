@@ -5,10 +5,10 @@ from functools import lru_cache
 from typing import Optional
 
 import httpx
-from pydantic import BaseModel, Extra, field_serializer
+from pydantic import BaseModel, field_serializer
 
-from .config import settings
-from .jobstates import States
+from pyvatti.config import settings
+from pyvatti.jobstates import States
 
 API_ROOT = "https://api.cloud.seqera.io"
 
@@ -35,7 +35,7 @@ class SeqeraJobStatus(enum.Enum):
         return str(self.value)
 
 
-class SeqeraLog(BaseModel, extra=Extra.ignore):
+class SeqeraLog(BaseModel):
     runName: str
     start: datetime
     dateCreated: datetime

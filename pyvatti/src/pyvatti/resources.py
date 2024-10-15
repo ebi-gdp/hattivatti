@@ -8,10 +8,10 @@ import tempfile
 import yaml
 from google.cloud import storage
 
-from .jobmodels import JobModel
-from .helm import render_template
-from .config import settings
-from .jobstates import States
+from pyvatti.models import JobRequest
+from pyvatti.helm import render_template
+from pyvatti.config import settings
+from pyvatti.jobstates import States
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +22,7 @@ class ResourceHandler(abc.ABC):
         self.intp_id = intp_id
 
     @abc.abstractmethod
-    async def create_resources(self, job_model: JobModel):
+    async def create_resources(self, job_model: JobRequest):
         """Create the compute resources needed to run a job
 
         For example:
@@ -42,9 +42,20 @@ class ResourceHandler(abc.ABC):
         ...
 
 
-class GoogleResourceHandler(ResourceHandler):
-    dry_run = False
+class DummyResourceHandler(ResourceHandler):
+    """A dummy resource handler for testing"""
 
+    def __init__(self, intp_id: str):
+        self.intp_id = intp_id
+
+    def create_resources(self, job_model: JobRequest):
+        pass
+
+    def destroy_resources(self, state):
+        pass
+
+
+class GoogleResourceHandler(ResourceHandler):
     def __init__(
         self,
         intp_id,
@@ -61,7 +72,7 @@ class GoogleResourceHandler(ResourceHandler):
         self._results_bucket_existed_on_create = False
         self._helm_installed = False
 
-    async def create_resources(self, job_model: JobModel):
+    async def create_resources(self, job_model: JobRequest):
         """Create some resources to run the job, including:
 
         - Create a bucket with lifecycle management
@@ -90,12 +101,12 @@ class GoogleResourceHandler(ResourceHandler):
         else:
             self._delete_buckets(results=False)
 
-    def make_buckets(self, job_model: JobModel):
+    def make_buckets(self, job_model: JobRequest):
         """Create the buckets needed to run the job"""
         self._make_work_bucket(job_model)
         self._make_results_bucket(job_model)
 
-    def _make_work_bucket(self, job_model: JobModel):
+    def _make_work_bucket(self, job_model: JobRequest):
         """Unfortunately google cloud storage doesn't support async
 
         The work bucket has much stricter lifecycle policies than the results bucket
@@ -142,7 +153,7 @@ class GoogleResourceHandler(ResourceHandler):
 
         bucket.create(location=self._location)
 
-    def _make_results_bucket(self, job_model: JobModel):
+    def _make_results_bucket(self, job_model: JobRequest):
         """Unfortunately the google storage library doesn't support async"""
         client = storage.Client(project=self.project_id)
         bucket: storage.Bucket = client.bucket(self._results_bucket)
@@ -198,7 +209,7 @@ class GoogleResourceHandler(ResourceHandler):
 
 
 async def helm_install(
-    job_model: JobModel, work_bucket_path: str, results_bucket_path: str
+    job_model: JobRequest, work_bucket_path: str, results_bucket_path: str
 ):
     release_name: str = job_model.pipeline_param.id.lower()
     template = render_template(

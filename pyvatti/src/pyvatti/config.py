@@ -1,17 +1,15 @@
 import enum
+import sys
 from typing import Optional
 
 from pydantic import Field, DirectoryPath, AnyHttpUrl
 from pydantic_settings import BaseSettings
 
 
-class K8SNamespace(enum.Enum):
+class K8SNamespace(str, enum.Enum):
     DEV = "intervene-dev"
     TEST = "intervene-test"
     PROD = "intervene-prod"
-
-    def __str__(self):
-        return str(self.value)
 
 
 class Settings(BaseSettings):
@@ -49,4 +47,7 @@ class Settings(BaseSettings):
     NOTIFY_TOKEN: str = Field(description="Token for backend notifications")
 
 
-settings = Settings()
+if "pytest" in sys.modules:
+    settings = None
+else:
+    settings = Settings()

@@ -2,69 +2,70 @@
 """This module contains a state machine that represents job states and their transitions"""
 
 import logging
-import shelve
-import urllib.parse
-from datetime import timezone, datetime
-from functools import lru_cache
 from typing import Optional
 
-import transitions
-from transitions import EventData
-from transitions.extensions.asyncio import AsyncMachine
+from transitions import Machine, EventData, MachineError
 
-from . import SHELF_PATH, CLIENT, SHELF_LOCK
-from .config import settings
-from .monitor import BackendStatusMessage
+from pyvatti.jobstates import States
+from pyvatti.models import JobRequest
 
-from .resources import GoogleResourceHandler
-from .jobstates import States
+from pyvatti.resources import GoogleResourceHandler, DummyResourceHandler
 
 logger = logging.getLogger(__name__)
 
 
-class PolygenicScoreJob(AsyncMachine):
-    """This is a state machine for polygenic score calculation jobs
+class PolygenicScoreJob(Machine):
+    """A state machine for polygenic score calculation jobs
 
-    >>> import asyncio
-    >>> job = PolygenicScoreJob("INT123456")
+    >>> import sys
+    >>> logger.addHandler(logging.StreamHandler(sys.stdout))
+    >>> job = PolygenicScoreJob("INT123456", dry_run=True)
     >>> job
     PolygenicScoreJob(id='INT123456')
+
+    On instantiation the default job state is requested:
+
     >>> job.state
     <States.REQUESTED: 'requested'>
-    >>> _ = asyncio.run(job.create())
-    creating resources
-    >>> _ = asyncio.run(job.deploy())
-    sending state notification: States.DEPLOYED
-    >>> job.state
-    <States.DEPLOYED: 'deployed'>
-    >>> _ = asyncio.run(job.succeed())
-    sending state notification: States.SUCCEEDED
-    deleting all resources: INT123456
 
-    Once a job has succeeded it can't error:
+    Normally creating a resource requires some parameters from a message, but not in dry run mdoe:
 
-    >>> _ = asyncio.run(job.error())
+    >>> job.trigger("create")  # doctest: +ELLIPSIS
+    Creating resources for INT123456
+    Job message: None
+    ...
+
+    A job is deployed once it's live on the cluster, doing work, and sending logs:
+
+    >>> job.trigger("deploy")  # doctest: +ELLIPSIS
+    Sending state notification: States.DEPLOYED
+    ...
+
+    Notifications are sent to the backend to update the user.
+
+    A job may enter the succeed state if it's received a message confirming this:
+
+    >>> job.trigger("succeed")  # doctest: +ELLIPSIS
+    Sending state notification: States.SUCCEEDED
+    Deleting all resources: INT123456
+    ...
+
+    State machines are helpful to prevent illegal state transitions. For example, once a job has succeeded it can't error:
+
+    >>> job.trigger("error")  # doctest: +ELLIPSIS
     Traceback (most recent call last):
     ...
     transitions.core.MachineError: "Can't trigger event error from state SUCCEEDED!"
 
     Let's look at a misbehaving job:
 
-    >>> bad_job = PolygenicScoreJob("INT789123")
+    >>> bad_job = PolygenicScoreJob("INT789123", dry_run=True)
+    >>> bad_job.trigger("error")  # doctest: +ELLIPSIS
+    Sending state notification: States.FAILED
+    Deleting all resources: INT789123
+    ...
 
-    >>> _ = asyncio.run(bad_job.error())
-    sending state notification: States.FAILED
-    deleting all resources: INT789123
-
-    It's important that jobs can be pickled and loaded back OK:
-
-    >>> import pickle
-    >>> dump = pickle.dumps(job)
-    >>> job2 = pickle.loads(dump)
-    >>> job.states.keys() == job2.states.keys()
-    True
-    >>> job.state == job2.state
-    True
+    It's important to clean up and delete resources in the event of a failure.
     """
 
     # when callback methods are invoked _after_ a transition, state = destination
@@ -107,7 +108,7 @@ class PolygenicScoreJob(AsyncMachine):
         },
     ]
 
-    def __init__(self, intp_id):
+    def __init__(self, intp_id, dry_run=False):
         states = [
             # a dummy initial state: /launch got POSTed
             {"name": States.REQUESTED},
@@ -123,7 +124,11 @@ class PolygenicScoreJob(AsyncMachine):
         ]
 
         self.intp_id = intp_id
-        self.handler = GoogleResourceHandler(intp_id=intp_id)
+
+        if dry_run:
+            self.handler = DummyResourceHandler(intp_id=intp_id)
+        else:
+            self.handler = GoogleResourceHandler(intp_id=intp_id)
 
         # set up the state machine
         super().__init__(
@@ -135,75 +140,30 @@ class PolygenicScoreJob(AsyncMachine):
             send_event=True,
         )
 
-    def handle_error(self):
+    def handle_error(self, event):
         logger.warning(f"Exception raised for {self.intp_id}")
-        try:
-            self.trigger("error")
-        except transitions.MachineError:
+        if isinstance(event.error, MachineError):
             logger.warning(f"Couldn't trigger error state for {self.intp_id}")
+            raise event.error
+        else:
+            self.trigger("error")
 
-    async def create_resources(self, event: EventData):
+    def create_resources(self, event: EventData):
         """Create resources required to start the job"""
-        print("creating resources")
-        await self.handler.create_resources(job_model=event.kwargs["job_model"])
+        logger.info(f"Creating resources for {self.intp_id}")
+        job_request: Optional[JobRequest] = event.kwargs.get("job_request", None)
+        logger.info(f"Job message: {job_request}")
+        self.handler.create_resources(job_request)
 
-    async def destroy_resources(self, event: EventData):
+    def destroy_resources(self, event: EventData):
         """Delete all resources associated with this job"""
-        print(f"deleting all resources: {self.intp_id}")
-        await self.handler.destroy_resources(state=event.state.value)
+        logger.info(f"Deleting all resources: {self.intp_id}")
+        self.handler.destroy_resources(state=event.state.value)
 
-    async def notify(self, event: Optional[EventData]):
+    def notify(self, event: Optional[EventData]):
         """Notify the backend about the job state"""
-        print(f"sending state notification: {self.state}")
-        if event is not None:
-            # TODO: grab event data
-            utc_time = datetime.now(timezone.utc)
-        else:
-            utc_time = datetime.now(timezone.utc)
-
-        msg = BackendStatusMessage(
-            run_name=self.intp_id, utc_time=utc_time, event=self.state
-        )
-
-        url = f"bff/pipeline-manager/integration/pipeline/{msg.run_name}/status"
-        notify_url = urllib.parse.urljoin(str(settings.NOTIFY_URL), url)
-        response = await CLIENT.patch(
-            url=notify_url, data=msg.json(), headers=notify_headers()
-        )
-
-        if response.status_code == 200:
-            logger.info(f"Notification success: {msg}")
-        else:
-            logger.warning(f"Notification failed: {msg}")
+        logger.info(f"Sending state notification: {self.state}")
+        # TODO: add kafka
 
     def __repr__(self):
         return f"{self.__class__.__name__}(id={self.intp_id!r})"
-
-
-async def update_job_state(workflow_id: str, trigger: str):
-    with shelve.open(SHELF_PATH) as db:
-        job_instance: PolygenicScoreJob = db[workflow_id]
-
-    logger.info(f"Triggering state {trigger}")
-
-    await job_instance.trigger(trigger, client=CLIENT)
-    match trigger:
-        case "succeed" | "error":
-            delete = True
-        case _:
-            delete = False
-
-    async with SHELF_LOCK:
-        with shelve.open(SHELF_PATH) as db:
-            if not delete:
-                db[workflow_id] = job_instance
-            else:
-                db.pop(workflow_id)
-
-
-@lru_cache
-def notify_headers():
-    return {
-        "Content-Type": "application/json",
-        "Authorization": f"Basic {settings.NOTIFY_TOKEN}",
-    }

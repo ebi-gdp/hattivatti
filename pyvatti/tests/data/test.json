@@ -4,35 +4,39 @@
             {
                 "pheno": "hapnest.psam",
                 "vcf_import_dosage": false,
+                "format": "pfile",
                 "variants": "hapnest.pvar",
                 "geno": "hapnest.pgen",
                 "sampleset": "test",
-                "chrom": null,
-                "format": "pfile"
+                "chrom": null
             }
         ],
         "nxf_params_file": {
-            "pgs_id": "PGS001229",
+            "trait_efo": "EFO_1000068",
             "format": "json",
             "target_build": "GRCh38"
         },
-        "id": "INTP00000000028"
+        "id": "INTP00000000513"
     },
     "globus_details": {
-        "dir_path_on_guest_collection": "bwingfield@ebi.ac.uk/hapnestgcp/",
+        "dir_path_on_guest_collection": "test@ebi.ac.uk/Sample-Set-Wednesday-18-Sep-15-17-fc578e94",
         "files": [
             {
-                "filename": "hapnest.pgen",
+                "filename": "hapnest.pgen.c4gh",
                 "size": 278705850
             },
             {
-                "filename": "hapnest.psam",
-                "size": 8517
+                "filename": "hapnest.pvar.c4gh",
+                "size": 215004174
             },
             {
-                "filename": "hapnest.pvar",
-                "size": 214912210
+                "filename": "hapnest.psam.c4gh",
+                "size": 8517
             }
         ]
+    },
+    "secret_key_details": {
+        "secret_id": "81D5C400-21B4-4E88-8208-8D64C9920283",
+        "secret_id_version": "1"
     }
 }
