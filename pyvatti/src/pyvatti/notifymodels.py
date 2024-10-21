@@ -1,7 +1,8 @@
-""" This module contains pydantic models that represent responses from the Seqera platform API
+"""This module contains pydantic models that represent responses from the Seqera platform API
 
 The platform API is queried to poll and monitor the state of running jobs
 """
+
 import logging
 from datetime import datetime
 import enum
