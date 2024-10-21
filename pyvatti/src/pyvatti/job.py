@@ -2,16 +2,22 @@
 """This module contains a state machine that represents job states and their transitions"""
 
 import logging
-from typing import Optional
+from functools import lru_cache
+from typing import Optional, ClassVar
 
+import httpx
 from transitions import Machine, EventData, MachineError
 
+from pyvatti.config import settings
 from pyvatti.jobstates import States
-from pyvatti.models import JobRequest
+from pyvatti.messagemodels import JobRequest
+from pyvatti.notifymodels import SeqeraLog
 
 from pyvatti.resources import GoogleResourceHandler, DummyResourceHandler
 
 logger = logging.getLogger(__name__)
+
+API_ROOT = "https://api.cloud.seqera.io"
 
 
 class PolygenicScoreJob(Machine):
@@ -108,6 +114,13 @@ class PolygenicScoreJob(Machine):
         },
     ]
 
+    # map from destination states to triggers
+    state_trigger_map: ClassVar[dict] = {
+        States.FAILED: "error",
+        States.SUCCEEDED: "succeed",
+        States.DEPLOYED: "deploy",
+    }
+
     def __init__(self, intp_id, dry_run=False):
         states = [
             # a dummy initial state: /launch got POSTed
@@ -165,5 +178,29 @@ class PolygenicScoreJob(Machine):
         logger.info(f"Sending state notification: {self.state}")
         # TODO: add kafka
 
+    def get_job_state(self) -> Optional[States]:
+        """Get the state of a job by checking the Seqera Platform API
+
+        Job state matches the state machine triggers"""
+        params = {
+            "workspaceId": settings.TOWER_WORKSPACE,
+            "search": f"{settings.NAMESPACE}-{self.intp_id}",
+        }
+
+        with httpx.Client() as client:
+            response = client.get(
+                f"{API_ROOT}/workflow", headers=get_headers(), params=params
+            )
+
+        return SeqeraLog.from_response(response).get_job_state()
+
     def __repr__(self):
         return f"{self.__class__.__name__}(id={self.intp_id!r})"
+
+
+@lru_cache
+def get_headers():
+    return {
+        "Authorization": f"Bearer {settings.TOWER_TOKEN}",
+        "Accept": "application/json",
+    }

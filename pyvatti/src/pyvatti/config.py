@@ -1,5 +1,7 @@
 import enum
+import pathlib
 import sys
+from tempfile import NamedTemporaryFile
 from typing import Optional
 
 from pydantic import Field, DirectoryPath, AnyHttpUrl
@@ -45,9 +47,23 @@ class Settings(BaseSettings):
         description="Number of seconds to wait before polling Seqera platform API",
     )
     NOTIFY_TOKEN: str = Field(description="Token for backend notifications")
+    SQLITE_DB_PATH: pathlib.Path = Field(
+        description="Path to a sqlite database",
+        default_factory=lambda: NamedTemporaryFile(delete=False).name,
+    )
 
 
 if "pytest" in sys.modules:
-    settings = None
+    settings = Settings(
+        HELM_CHART_PATH="/tmp",
+        TOWER_TOKEN="test",
+        TOWER_WORKSPACE="test",
+        GLOBUS_DOMAIN="https://example.com",
+        GLOBUS_CLIENT_ID="test",
+        GLOBUS_CLIENT_SECRET="test",
+        GLOBUS_SCOPES="test",
+        NOTIFY_URL="https://example.com",
+        NOTIFY_TOKEN="test",
+    )
 else:
     settings = Settings()

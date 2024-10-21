@@ -12,7 +12,7 @@ from typing import Optional
 import yaml
 from pydantic import BaseModel, Field, field_validator
 from pyvatti.config import settings
-from pyvatti.models import JobRequest
+from pyvatti.messagemodels import JobRequest
 
 
 @lru_cache

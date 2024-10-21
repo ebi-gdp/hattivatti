@@ -8,7 +8,7 @@ import tempfile
 import yaml
 from google.cloud import storage
 
-from pyvatti.models import JobRequest
+from pyvatti.messagemodels import JobRequest
 from pyvatti.helm import render_template
 from pyvatti.config import settings
 from pyvatti.jobstates import States
@@ -43,7 +43,7 @@ class ResourceHandler(abc.ABC):
 
 
 class DummyResourceHandler(ResourceHandler):
-    """A dummy resource handler for testing"""
+    """A dummy resource handler that doesn't do anything for testing"""
 
     def __init__(self, intp_id: str):
         self.intp_id = intp_id
