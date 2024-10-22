@@ -1,17 +1,19 @@
 # type: ignore
 """This module contains a state machine that represents job states and their transitions"""
-
 import logging
+import sys
+from datetime import datetime
 from functools import lru_cache
 from typing import Optional, ClassVar
 
 import httpx
+from kafka import KafkaProducer
 from transitions import Machine, EventData, MachineError
 
 from pyvatti.config import settings
 from pyvatti.jobstates import States
 from pyvatti.messagemodels import JobRequest
-from pyvatti.notifymodels import SeqeraLog
+from pyvatti.notifymodels import SeqeraLog, BackendStatusMessage, BackendEvents
 
 from pyvatti.resources import GoogleResourceHandler, DummyResourceHandler
 
@@ -51,8 +53,9 @@ class PolygenicScoreJob(Machine):
 
     A job may enter the succeed state if it's received a message confirming this:
 
-    >>> job.trigger("succeed")  # doctest: +ELLIPSIS
+    >>> job.trigger("succeed") # doctest: +ELLIPSIS
     Sending state notification: States.SUCCEEDED
+    msg='{"run_name":"INT123456","utc_time":...,"event":"completed"}' prepared to send to pipeline-notify topic (PYTEST RUNNING)
     Deleting all resources: INT123456
     ...
 
@@ -68,6 +71,7 @@ class PolygenicScoreJob(Machine):
     >>> bad_job = PolygenicScoreJob("INT789123", dry_run=True)
     >>> bad_job.trigger("error")  # doctest: +ELLIPSIS
     Sending state notification: States.FAILED
+    msg='{"run_name":"INT789123","utc_time":"...","event":"error"}' prepared to send to pipeline-notify topic (PYTEST RUNNING)
     Deleting all resources: INT789123
     ...
 
@@ -118,7 +122,13 @@ class PolygenicScoreJob(Machine):
     state_trigger_map: ClassVar[dict] = {
         States.FAILED: "error",
         States.SUCCEEDED: "succeed",
-        States.DEPLOYED: "deploy",
+        States.DEPLOYED: "deployed",
+    }
+    # map from states to events recognised by the backend
+    state_event_map: ClassVar[dict] = {
+        States.FAILED: BackendEvents.ERROR,
+        States.SUCCEEDED: BackendEvents.COMPLETED,
+        States.DEPLOYED: BackendEvents.STARTED,
     }
 
     def __init__(self, intp_id, dry_run=False):
@@ -176,7 +186,24 @@ class PolygenicScoreJob(Machine):
     def notify(self, event: Optional[EventData]):
         """Notify the backend about the job state"""
         logger.info(f"Sending state notification: {self.state}")
-        # TODO: add kafka
+        event: str = self.state_event_map[self.state]
+        msg: str = BackendStatusMessage(
+            run_name=self.intp_id, utc_time=datetime.now(), event=event
+        ).model_dump_json()
+        if "pytest" in sys.modules:
+            logger.info(
+                f"{msg=} prepared to send to pipeline-notify topic (PYTEST RUNNING)"
+            )
+        else:
+            producer = KafkaProducer(
+                bootstrap_servers=[
+                    f"{settings.KAFKA_BOOTSTRAP_SERVER.host}:{settings.KAFKA_BOOTSTRAP_SERVER.port}"
+                ],
+                value_serializer=lambda v: v.encode("utf-8"),
+            )
+            producer.send("pipeline-notify", msg)
+            producer.flush()
+            logger.info(f"{msg=} sent to pipeline-notify topic")
 
     def get_job_state(self) -> Optional[States]:
         """Get the state of a job by checking the Seqera Platform API
@@ -185,6 +212,7 @@ class PolygenicScoreJob(Machine):
         params = {
             "workspaceId": settings.TOWER_WORKSPACE,
             "search": f"{settings.NAMESPACE}-{self.intp_id}",
+            "max": 1,
         }
 
         with httpx.Client() as client:
@@ -192,7 +220,7 @@ class PolygenicScoreJob(Machine):
                 f"{API_ROOT}/workflow", headers=get_headers(), params=params
             )
 
-        return SeqeraLog.from_response(response).get_job_state()
+        return SeqeraLog.from_response(response.json()).get_job_state()
 
     def __repr__(self):
         return f"{self.__class__.__name__}(id={self.intp_id!r})"

@@ -4,7 +4,7 @@ import sys
 from tempfile import NamedTemporaryFile
 from typing import Optional
 
-from pydantic import Field, DirectoryPath, AnyHttpUrl
+from pydantic import Field, DirectoryPath, AnyHttpUrl, KafkaDsn
 from pydantic_settings import BaseSettings
 
 
@@ -51,6 +51,7 @@ class Settings(BaseSettings):
         description="Path to a sqlite database",
         default_factory=lambda: NamedTemporaryFile(delete=False).name,
     )
+    KAFKA_BOOTSTRAP_SERVER: KafkaDsn
 
 
 if "pytest" in sys.modules:
@@ -64,6 +65,7 @@ if "pytest" in sys.modules:
         GLOBUS_SCOPES="test",
         NOTIFY_URL="https://example.com",
         NOTIFY_TOKEN="test",
+        KAFKA_BOOTSTRAP_SERVER="kafka://localhost:9092",
     )
 else:
     settings = Settings()

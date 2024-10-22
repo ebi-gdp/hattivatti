@@ -7,9 +7,8 @@ import logging
 from datetime import datetime
 import enum
 from functools import lru_cache
-from typing import Optional
+from typing import Optional, Type, Self
 
-import httpx
 from pydantic import BaseModel, PastDatetime
 
 from pyvatti.config import settings
@@ -41,6 +40,30 @@ class SeqeraJobStatus(str, enum.Enum):
 
 
 class SeqeraLog(BaseModel):
+    """
+
+    When jobs start they send logs back via the Seqera API. Let's try to parse a fake response from the Seqera API:
+
+    >>> import json, pathlib
+    >>> testmsg = pathlib.Path(__file__).parent.parent.parent / "tests" / "data" / "seqera-response.json"
+    >>> with open(testmsg) as f:
+    ...     d = json.load(f)
+    >>> log = SeqeraLog.from_response(d)
+    >>> log # doctest: +ELLIPSIS
+    SeqeraLog(runName='intervene-dev-intp00000000044', ...
+
+    Parse the seqera status to a job machine state:
+
+    >>> log.get_job_state()
+    <States.SUCCEEDED: 'succeeded'>
+
+    A job can take time to start. During this time you'll get empty responses from the Seqera API:
+
+    >>> missing_job = {"workflows":[],"totalSize":0}
+    >>> SeqeraLog.from_response(missing_job) is None
+    True
+    """
+
     runName: str
     start: datetime
     dateCreated: datetime
@@ -48,14 +71,26 @@ class SeqeraLog(BaseModel):
     exitStatus: Optional[int] = None
 
     @classmethod
-    def from_response(cls, response: httpx.Response):
-        if len(workflow := response.json()["workflows"]) == 1:
-            return cls(**workflow[0]["workflow"])
+    def from_response(cls: Type[Self], json: dict) -> Optional[Self]:
+        log: Optional[SeqeraLog]
+        size: int = json["totalSize"]
+        if size == 0:
+            logger.info("No workflow found in Seqera API")
+            log = None
+        elif size == 1:
+            logger.info("Valid response received from Seqera API")
+            log = cls(**json["workflows"][0]["workflow"])
         else:
-            return None
+            logger.warning(
+                "More than one workflow in response. This should never happen, so setting response to None"
+            )
+            log = None
+
+        return log
 
     def get_job_state(self) -> Optional[States]:
         """Get valid job states"""
+        state: Optional[States]
         match self.status:
             case SeqeraJobStatus.SUCCEEDED:
                 state = States.SUCCEEDED
@@ -69,15 +104,23 @@ class SeqeraLog(BaseModel):
         return state
 
 
+class BackendEvents(str, enum.Enum):
+    """Events recognised by the backend"""
+
+    STARTED = "started"
+    ERROR = "error"
+    COMPLETED = "completed"
+
+
 class BackendStatusMessage(BaseModel):
     """A message updating the backend about job state
 
     >>> from datetime import datetime
-    >>> d = {"run_name": "INTP123456", "utc_time": datetime(1999, 12, 31), "event": States.SUCCEEDED}
+    >>> d = {"run_name": "INTP123456", "utc_time": datetime(1999, 12, 31), "event": BackendEvents.COMPLETED}
     >>> BackendStatusMessage(**d).model_dump_json()
-    '{"run_name":"INTP123456","utc_time":"1999-12-31T00:00:00","event":"succeeded"}'
+    '{"run_name":"INTP123456","utc_time":"1999-12-31T00:00:00","event":"completed"}'
     """
 
     run_name: str
     utc_time: PastDatetime
-    event: States
+    event: BackendEvents
