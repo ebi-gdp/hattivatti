@@ -1,8 +1,8 @@
 """This module contains classes to handle the resources needed to run a job"""
 
 import abc
-import asyncio
 import logging
+import subprocess
 import tempfile
 
 import yaml
@@ -22,7 +22,7 @@ class ResourceHandler(abc.ABC):
         self.intp_id = intp_id
 
     @abc.abstractmethod
-    async def create_resources(self, job_model: JobRequest):
+    def create_resources(self, job_model: JobRequest):
         """Create the compute resources needed to run a job
 
         For example:
@@ -32,7 +32,7 @@ class ResourceHandler(abc.ABC):
         ...
 
     @abc.abstractmethod
-    async def destroy_resources(self, state):
+    def destroy_resources(self, state):
         """Destroy the created resources
 
         Cleaning up properly is very important to keep sensitive data safe
@@ -57,10 +57,7 @@ class DummyResourceHandler(ResourceHandler):
 
 class GoogleResourceHandler(ResourceHandler):
     def __init__(
-        self,
-        intp_id,
-        project_id="prj-ext-dev-intervene-413412",
-        location="europe-west2",
+        self, intp_id, project_id=settings.GCP_PROJECT, location=settings.GCP_LOCATION
     ):
         super().__init__(intp_id=intp_id.lower())
         self.project_id = project_id
@@ -72,7 +69,7 @@ class GoogleResourceHandler(ResourceHandler):
         self._results_bucket_existed_on_create = False
         self._helm_installed = False
 
-    async def create_resources(self, job_model: JobRequest):
+    def create_resources(self, job_model: JobRequest):
         """Create some resources to run the job, including:
 
         - Create a bucket with lifecycle management
@@ -82,7 +79,7 @@ class GoogleResourceHandler(ResourceHandler):
 
         self.make_buckets(job_model=job_model)
         try:
-            await helm_install(
+            helm_install(
                 job_model=job_model,
                 work_bucket_path=self._work_bucket,
                 results_bucket_path=self._results_bucket,
@@ -92,9 +89,9 @@ class GoogleResourceHandler(ResourceHandler):
         else:
             self._helm_installed = True
 
-    async def destroy_resources(self, state):
+    def destroy_resources(self, state):
         if self._helm_installed:
-            await helm_uninstall(self.intp_id)
+            helm_uninstall(self.intp_id)
 
         if state == States.FAILED:
             self._delete_buckets(results=True)
@@ -154,7 +151,6 @@ class GoogleResourceHandler(ResourceHandler):
         bucket.create(location=self._location)
 
     def _make_results_bucket(self, job_model: JobRequest):
-        """Unfortunately the google storage library doesn't support async"""
         client = storage.Client(project=self.project_id)
         bucket: storage.Bucket = client.bucket(self._results_bucket)
 
@@ -177,7 +173,6 @@ class GoogleResourceHandler(ResourceHandler):
         bucket.create(location=self._location)
 
     def _delete_buckets(self, results=False):
-        # TODO: what if this is slow? it's not async!
         if self._work_bucket_existed_on_create:
             # don't delete a bucket that existed before the job was created
             # otherwise a bad job will interfere with an existing good job
@@ -208,7 +203,7 @@ class GoogleResourceHandler(ResourceHandler):
             results_bucket.delete(force=True)
 
 
-async def helm_install(
+def helm_install(
     job_model: JobRequest, work_bucket_path: str, results_bucket_path: str
 ):
     release_name: str = job_model.pipeline_param.id.lower()
@@ -221,29 +216,21 @@ async def helm_install(
     with tempfile.NamedTemporaryFile(mode="wt") as temp_f:
         yaml.dump(template, temp_f)
         cmd = f"helm install {release_name} {settings.HELM_CHART_PATH} -n {str(settings.NAMESPACE)} -f {temp_f.name}"
-        proc = await asyncio.create_subprocess_shell(
-            cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-        )
-        stdout, stderr = await proc.communicate()
+        helm: subprocess.CompletedProcess = subprocess.run(cmd)
 
-    if proc.returncode != 0:
-        logger.critical(f"{stderr.decode()}")
+    if helm.returncode != 0:
+        logger.critical(f"{helm.stderr}")
         raise ValueError("helm install failed")
     else:
         logger.info("helm install OK")
 
 
-async def helm_uninstall(release_name: str):
+def helm_uninstall(release_name: str):
     cmd = f"helm uninstall --namespace {str(settings.NAMESPACE)} {release_name.lower()}"
+    helm: subprocess.CompletedProcess = subprocess.run(cmd)
 
-    proc = await asyncio.create_subprocess_shell(
-        cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-    )
-
-    stdout, stderr = await proc.communicate()
-
-    if proc.returncode != 0:
-        logger.critical(f"{stderr.decode()}")
+    if helm.returncode != 0:
+        logger.critical(f"{helm.stderr}")
         raise ValueError("helm uninstall failed")
     else:
-        logger.info(f"helm uninstall {release_name} OK")
+        logger.info("helm uninstall OK")

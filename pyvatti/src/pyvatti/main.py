@@ -1,6 +1,5 @@
 import json
 import logging
-import signal
 import sys
 import threading
 import time
@@ -20,9 +19,10 @@ from pyvatti.messagemodels import JobRequest
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
+kafka_logger = logging.getLogger("kafka")
+kafka_logger.setLevel(logging.WARNING)
 
 JOB_DATABASE = SqliteJobDatabase(settings.SQLITE_DB_PATH)
-SHUTDOWN_EVENT = threading.Event()
 
 
 def check_job_state() -> None:
@@ -31,8 +31,10 @@ def check_job_state() -> None:
     Created (resources requested) -> Deployed (running) -> Succeeded / Failed
     """
     # active jobs: haven't succeeded or failed
-    jobs: list[PolygenicScoreJob] = JOB_DATABASE.get_active_jobs()
-    logger.info(f"{len(jobs)} active jobs found")
+    jobs: Optional[list[PolygenicScoreJob]] = JOB_DATABASE.get_active_jobs()
+    if jobs is not None:
+        logger.info(f"{len(jobs)} active jobs found")
+
     for job in jobs:
         logger.info(f"Checking {job=} state")
         job_state: Optional[States] = job.get_job_state()
@@ -50,23 +52,22 @@ def check_job_state() -> None:
 
 def kafka_consumer() -> None:
     consumer = KafkaConsumer(
-        topic=settings.KAFKA_CONSUMER_TOPIC,
-        bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS,
+        settings.KAFKA_CONSUMER_TOPIC,
+        bootstrap_servers=f"{settings.KAFKA_BOOTSTRAP_SERVER.host}:{settings.KAFKA_BOOTSTRAP_SERVER.port}",
         enable_auto_commit=False,
-        value_deserializer=lambda m: json.loads(m.decode("ascii")),
     )
+    logger.info("Listening for kafka messages")
 
-    # want to avoid partially processing a commit if the thread is terminated
-    try:
-        for message in consumer:
-            if SHUTDOWN_EVENT.is_set():
-                logger.info("Shutdown event received")
-                break
-            process_message(message.value)
-            consumer.commit()
-    finally:
-        logger.info("Closing kafka connection")
-        consumer.close()
+    # TODO: want to avoid partially processing a commit if the thread is terminated
+    for message in consumer:
+        logger.info("Message read from kafka consumer")
+        try:
+            decoded_msg = json.loads(message.value.decode("utf-8"))
+            process_message(decoded_msg)
+        except json.JSONDecodeError as e:
+            logger.warning("Invalid JSON, skipping message")
+            logger.warning(f"Message {message.value} caused exception: {e}")
+            continue
 
 
 def process_message(msg_value: dict) -> None:
@@ -85,34 +86,25 @@ def process_message(msg_value: dict) -> None:
         PolygenicScoreJob.create(job_model=job_message)
         JOB_DATABASE.insert_job(job)
     except pydantic.ValidationError as e:
-        logger.critical("Job request message validation failed")
+        logger.critical("Job request message validation failed, skipping job")
         logger.critical(f"{e}")
-
-
-def graceful_shutdown(*args):
-    logger.info("Shutdown signal received")
-    SHUTDOWN_EVENT.set()
+    except Exception as e:
+        logger.critical(f"Something went wildly wrong, skipping job: {e}")
 
 
 def main():
-    # handle shutdowns gracefully (partially processing a job request would be bad)
-    signal.signal(signal.SIGINT, graceful_shutdown)
-    signal.signal(signal.SIGTERM, graceful_shutdown)
-
     # create the job database if it does not exist (if it exists, nothing happens here)
     JOB_DATABASE.create()
 
     # consume new kafka messages and insert them into the database in a background thread
-    consumer_thread: threading.Thread = threading.Thread(
-        target=kafka_consumer, daemon=True
-    )
+    consumer_thread: threading.Thread = threading.Thread(target=kafka_consumer)
     consumer_thread.start()
 
     # check for timed out jobs with schedule
-    schedule.every(15).minutes.do(JOB_DATABASE.timeout_jobs)
+    schedule.every(1).minutes.do(JOB_DATABASE.timeout_jobs)
 
     # check if job states have changed and produce new messages
-    schedule.every(1).minutes.do(check_job_state)
+    schedule.every(settings.POLL_INTERVAL).seconds.do(check_job_state)
 
     # run scheduled tasks:
     while True:

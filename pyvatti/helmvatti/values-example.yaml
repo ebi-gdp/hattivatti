@@ -13,8 +13,8 @@ serviceAccount:
 # nextflow configuration
 nxfParams:
   workBucketPath: "gs://intervene-gcp-nxf/work"
-  gcpProject: "prj-ext-dev-intervene-413412"
-  location: "europe-west2"
+  gcpProject: dummy
+  location: dummy
   spot: false
   wave: true
   fusion: true

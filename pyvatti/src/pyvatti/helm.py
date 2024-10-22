@@ -6,7 +6,6 @@ validate generated job configuration, like work bucket names.
 """
 
 import pathlib
-from functools import lru_cache
 from typing import Optional
 
 import yaml
@@ -15,7 +14,6 @@ from pyvatti.config import settings
 from pyvatti.messagemodels import JobRequest
 
 
-@lru_cache
 def parse_value_template():
     values_template = pathlib.Path(settings.HELM_CHART_PATH / "values-example.yaml")
     return yaml.safe_load(values_template.read_text())
@@ -106,7 +104,7 @@ class HelmValues(BaseModel, validate_assignment=True):
 
 
 def _add_secrets(job: HelmValues):
-    """Add secrets from the fastAPI settings object"""
+    """Add secrets from the settings object"""
     job.secrets.towerToken = settings.TOWER_TOKEN
     job.secrets.towerId = settings.TOWER_WORKSPACE
     job.secrets.globusDomain = settings.GLOBUS_DOMAIN
@@ -134,9 +132,11 @@ def render_template(
     # set bucket paths to follow nextflow standards (gs:// prefix and can't use root of bucket)
     job_values.globflowParams.outdir = f"gs://{work_bucket_path}/data"
     job_values.nxfParams.workBucketPath = f"gs://{work_bucket_path}/work"
+    job_values.nxfParams.gcpProject = settings.GCP_PROJECT
+    job_values.nxfParams.location = settings.GCP_LOCATION
     job_values.calcJobParams.outdir = f"gs://{results_bucket_path}/results"
 
-    job_values.calcWorkflowInput = job.pipeline_param.target_genome.model_dump_json()
+    job_values.calcWorkflowInput = job.pipeline_param.target_genomes.model_dump_json()
     job_values.globflowInput = job.globus_details.model_dump_json()
 
     for x in ("pgs_id", "pgp_id", "trait_efo", "target_build"):

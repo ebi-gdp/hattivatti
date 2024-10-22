@@ -201,7 +201,7 @@ class PolygenicScoreJob(Machine):
                 ],
                 value_serializer=lambda v: v.encode("utf-8"),
             )
-            producer.send("pipeline-notify", msg)
+            producer.send(settings.KAFKA_PRODUCER_TOPIC, msg)
             producer.flush()
             logger.info(f"{msg=} sent to pipeline-notify topic")
 

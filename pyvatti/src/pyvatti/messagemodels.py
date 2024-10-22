@@ -11,6 +11,7 @@ from pydantic import (
     Field,
     UUID4,
     field_serializer,
+    RootModel,
 )
 
 
@@ -306,14 +307,20 @@ class SecretKeyDetails(BaseModel):
     ]
 
 
+class TargetGenomes(RootModel):
+    root: list[TargetGenome]
+
+    def __iter__(self):
+        for item in self.root:
+            yield item
+
+
 class PGSJobParams(BaseModel):
     id: Annotated[str, Field(description="PGS Job ID", pattern="INTP.*")]
     target_genomes: Annotated[
-        list[TargetGenome],
+        TargetGenomes,
         Field(
             description="Equivalent to a PGS Catalog Calculator samplesheet",
-            min_length=1,
-            max_length=1,
         ),
     ]
     nxf_params_file: Annotated[
