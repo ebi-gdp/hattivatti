@@ -40,6 +40,8 @@ globflowParams:
   input: /opt/input.json
   outdir: "gs://intervene-gcp-nxf/data"
   config_secrets: /opt/globflow/secrets.properties
+  secretId: dummy
+  secretIdVersion: dummy
 
 # these secrets are never written to a file, they're used to create secrets
 # values are set with --set, using environment variables from the local machine

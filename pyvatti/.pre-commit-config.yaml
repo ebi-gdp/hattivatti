@@ -9,3 +9,4 @@ repos:
   rev: 'v1.11.2'  # Use the sha / tag you want to point at
   hooks:
     - id: mypy
+      additional_dependencies: [types-PyYAML]

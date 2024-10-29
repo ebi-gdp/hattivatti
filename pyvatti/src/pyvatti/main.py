@@ -1,6 +1,5 @@
 import json
 import logging
-import sys
 import threading
 import time
 from typing import Optional
@@ -8,12 +7,12 @@ from typing import Optional
 import pydantic
 import schedule
 
-from pyvatti.config import settings
+from pyvatti.config import Settings
 from pyvatti.db import SqliteJobDatabase
 
 from kafka import KafkaConsumer
 
-from pyvatti.job import PolygenicScoreJob
+from pyvatti.pgsjob import PolygenicScoreJob  # type: ignore[attr-defined]
 from pyvatti.jobstates import States
 from pyvatti.messagemodels import JobRequest
 
@@ -22,18 +21,18 @@ logger.setLevel(logging.INFO)
 kafka_logger = logging.getLogger("kafka")
 kafka_logger.setLevel(logging.WARNING)
 
-JOB_DATABASE = SqliteJobDatabase(settings.SQLITE_DB_PATH)
 
-
-def check_job_state() -> None:
+def check_job_state(db: SqliteJobDatabase) -> None:
     """Check the state of the job on the Seqera Platform and update active jobs in the database if the state has changed
 
     Created (resources requested) -> Deployed (running) -> Succeeded / Failed
     """
     # active jobs: haven't succeeded or failed
-    jobs: Optional[list[PolygenicScoreJob]] = JOB_DATABASE.get_active_jobs()
+    jobs: Optional[list[PolygenicScoreJob]] = db.get_active_jobs()
     if jobs is not None:
         logger.info(f"{len(jobs)} active jobs found")
+    else:
+        return
 
     for job in jobs:
         logger.info(f"Checking {job=} state")
@@ -47,13 +46,18 @@ def check_job_state() -> None:
                 # e.g. "deploy" -> "succeed" / "error"
                 trigger: str = PolygenicScoreJob.state_trigger_map[job_state]
                 job.trigger(trigger)
-                JOB_DATABASE.update_job(job)
+                db.update_job(job)
 
 
-def kafka_consumer() -> None:
+def kafka_consumer(
+    db: SqliteJobDatabase,
+    topic: str,
+    bootstrap_server_host: str,
+    bootstrap_server_port: int,
+) -> None:
     consumer = KafkaConsumer(
-        settings.KAFKA_CONSUMER_TOPIC,
-        bootstrap_servers=f"{settings.KAFKA_BOOTSTRAP_SERVER.host}:{settings.KAFKA_BOOTSTRAP_SERVER.port}",
+        topic,
+        bootstrap_servers=f"{bootstrap_server_host}:{bootstrap_server_port}",
         enable_auto_commit=False,
     )
     logger.info("Listening for kafka messages")
@@ -63,14 +67,14 @@ def kafka_consumer() -> None:
         logger.info("Message read from kafka consumer")
         try:
             decoded_msg = json.loads(message.value.decode("utf-8"))
-            process_message(decoded_msg)
+            process_message(msg_value=decoded_msg, db=db)
         except json.JSONDecodeError as e:
             logger.warning("Invalid JSON, skipping message")
             logger.warning(f"Message {message.value} caused exception: {e}")
             continue
 
 
-def process_message(msg_value: dict) -> None:
+def process_message(msg_value: dict, db: SqliteJobDatabase) -> None:
     """Each kafka message:
 
     - Gets validated by the pydantic model JobRequest
@@ -84,7 +88,7 @@ def process_message(msg_value: dict) -> None:
             intp_id=job_message.pipeline_param.id
         )
         PolygenicScoreJob.create(job_model=job_message)
-        JOB_DATABASE.insert_job(job)
+        db.insert_job(job)
     except pydantic.ValidationError as e:
         logger.critical("Job request message validation failed, skipping job")
         logger.critical(f"{e}")
@@ -92,16 +96,19 @@ def process_message(msg_value: dict) -> None:
         logger.critical(f"Something went wildly wrong, skipping job: {e}")
 
 
-def main():
+def main() -> None:
     # create the job database if it does not exist (if it exists, nothing happens here)
-    JOB_DATABASE.create()
+    settings = Settings()
+    db = SqliteJobDatabase(str(settings.SQLITE_DB_PATH))
+
+    db.create()
 
     # consume new kafka messages and insert them into the database in a background thread
     consumer_thread: threading.Thread = threading.Thread(target=kafka_consumer)
     consumer_thread.start()
 
     # check for timed out jobs with schedule
-    schedule.every(1).minutes.do(JOB_DATABASE.timeout_jobs)
+    schedule.every(1).minutes.do(db.timeout_jobs)
 
     # check if job states have changed and produce new messages
     schedule.every(settings.POLL_INTERVAL).seconds.do(check_job_state)
@@ -113,4 +120,4 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()

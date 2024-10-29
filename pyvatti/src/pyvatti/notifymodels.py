@@ -11,7 +11,6 @@ from typing import Optional, Type, Self
 
 from pydantic import BaseModel, PastDatetime
 
-from pyvatti.config import settings
 from pyvatti.jobstates import States
 
 API_ROOT = "https://api.cloud.seqera.io"
@@ -21,10 +20,10 @@ logger = logging.getLogger(__name__)
 
 
 @lru_cache(maxsize=1)
-def get_headers():
+def get_headers(tower_token: str) -> dict[str, str]:
     """Headers that authorise querying the Seqera platform API"""
     return {
-        "Authorization": f"Bearer {settings.TOWER_TOKEN}",
+        "Authorization": f"Bearer {tower_token}",
         "Accept": "application/json",
     }
 

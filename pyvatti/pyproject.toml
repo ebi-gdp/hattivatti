@@ -23,6 +23,10 @@ kafka-python-ng = "^2.2.3"
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.1.1"
 mypy = "^1.12.0"
+types-pyyaml = "^6.0.12.20240917"
+
+[tool.poetry.scripts]
+pyvatti-render = "pyvatti.cli.render:main"
 
 [build-system]
 requires = ["poetry-core"]
@@ -32,3 +36,30 @@ build-backend = "poetry.core.masonry.api"
 minversion = "6.0"
 addopts = "-ra -q --doctest-modules"
 filterwarnings = ["error"]
+
+[tool.mypy]
+# Specifies the files or directories to check
+files = "src/**/*.py"
+exclude = "tests"
+
+# Options to control the level of type checking
+warn_unused_configs = true
+ignore_missing_imports = false
+follow_imports = "skip"
+disallow_untyped_calls = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_defs = true
+strict_optional = true
+implicit_reexport = true
+plugins = ["pydantic.mypy"]
+
+
+[[tool.mypy.overrides]]
+module = "google.cloud"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "kafka"
+ignore_missing_imports = true
+

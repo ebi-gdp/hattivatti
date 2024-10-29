@@ -1,5 +1,6 @@
 # type: ignore
 """This module contains a state machine that represents job states and their transitions"""
+
 import logging
 import sys
 from datetime import datetime
@@ -10,7 +11,7 @@ import httpx
 from kafka import KafkaProducer
 from transitions import Machine, EventData, MachineError
 
-from pyvatti.config import settings
+from pyvatti.config import Settings
 from pyvatti.jobstates import States
 from pyvatti.messagemodels import JobRequest
 from pyvatti.notifymodels import SeqeraLog, BackendStatusMessage, BackendEvents
@@ -38,7 +39,7 @@ class PolygenicScoreJob(Machine):
 
     Normally creating a resource requires some parameters from a message, but not in dry run mdoe:
 
-    >>> job.trigger("create")  # doctest: +ELLIPSIS
+    >>> job.trigger("create", )  # doctest: +ELLIPSIS
     Creating resources for INT123456
     Job message: None
     ...
@@ -131,7 +132,9 @@ class PolygenicScoreJob(Machine):
         States.DEPLOYED: BackendEvents.STARTED,
     }
 
-    def __init__(self, intp_id, dry_run=False):
+    def __init__(
+        self, intp_id: str, settings: Optional[Settings] = None, dry_run: bool = False
+    ):
         states = [
             # a dummy initial state: /launch got POSTed
             {"name": States.REQUESTED},
@@ -148,10 +151,13 @@ class PolygenicScoreJob(Machine):
 
         self.intp_id = intp_id
 
+        if not dry_run and settings is None:
+            raise TypeError("Settings cannot be none when not a dry run")
+
         if dry_run:
             self.handler = DummyResourceHandler(intp_id=intp_id)
         else:
-            self.handler = GoogleResourceHandler(intp_id=intp_id)
+            self.handler = GoogleResourceHandler(intp_id=intp_id, settings=settings)
 
         # set up the state machine
         super().__init__(
@@ -183,8 +189,9 @@ class PolygenicScoreJob(Machine):
         logger.info(f"Deleting all resources: {self.intp_id}")
         self.handler.destroy_resources(state=event.state.value)
 
-    def notify(self, event: Optional[EventData]):
+    def notify(self, _: EventData):
         """Notify the backend about the job state"""
+        # bootstrap_server_host: str, bootstrap_server_port: int
         logger.info(f"Sending state notification: {self.state}")
         event: str = self.state_event_map[self.state]
         msg: str = BackendStatusMessage(
@@ -195,29 +202,37 @@ class PolygenicScoreJob(Machine):
                 f"{msg=} prepared to send to pipeline-notify topic (PYTEST RUNNING)"
             )
         else:
+            producer_topic: str = self.handler.settings.KAFKA_PRODUCER_TOPIC
+            bootstrap_server_host: str = (
+                self.handler.settings.KAFKA_BOOTSTRAP_SERVER.host
+            )
+            bootstrap_server_port: int = (
+                self.handler.settings.KAFKA_BOOTSTRAP_SERVER.port
+            )
+
             producer = KafkaProducer(
-                bootstrap_servers=[
-                    f"{settings.KAFKA_BOOTSTRAP_SERVER.host}:{settings.KAFKA_BOOTSTRAP_SERVER.port}"
-                ],
+                bootstrap_servers=[f"{bootstrap_server_host}:{bootstrap_server_port}"],
                 value_serializer=lambda v: v.encode("utf-8"),
             )
-            producer.send(settings.KAFKA_PRODUCER_TOPIC, msg)
+            producer.send(producer_topic, msg)
             producer.flush()
             logger.info(f"{msg=} sent to pipeline-notify topic")
 
-    def get_job_state(self) -> Optional[States]:
+    def get_job_state(
+        self, tower_workspace: int, tower_token: str, namespace: str
+    ) -> Optional[States]:
         """Get the state of a job by checking the Seqera Platform API
 
         Job state matches the state machine triggers"""
         params = {
-            "workspaceId": settings.TOWER_WORKSPACE,
-            "search": f"{settings.NAMESPACE}-{self.intp_id}",
+            "workspaceId": tower_workspace,
+            "search": f"{namespace}-{self.intp_id}",
             "max": 1,
         }
 
         with httpx.Client() as client:
             response = client.get(
-                f"{API_ROOT}/workflow", headers=get_headers(), params=params
+                f"{API_ROOT}/workflow", headers=get_headers(tower_token), params=params
             )
 
         return SeqeraLog.from_response(response.json()).get_job_state()
@@ -226,9 +241,9 @@ class PolygenicScoreJob(Machine):
         return f"{self.__class__.__name__}(id={self.intp_id!r})"
 
 
-@lru_cache
-def get_headers():
+@lru_cache(maxsize=1)
+def get_headers(tower_token: str) -> dict[str, str]:
     return {
-        "Authorization": f"Bearer {settings.TOWER_TOKEN}",
+        "Authorization": f"Bearer {tower_token}",
         "Accept": "application/json",
     }

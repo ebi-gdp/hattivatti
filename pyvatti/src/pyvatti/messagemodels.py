@@ -2,7 +2,7 @@
 
 import enum
 import pathlib
-from typing import Optional, Self, Annotated, Any
+from typing import Optional, Self, Annotated, Any, Iterator
 
 from pydantic import (
     BaseModel,
@@ -310,7 +310,7 @@ class SecretKeyDetails(BaseModel):
 class TargetGenomes(RootModel):
     root: list[TargetGenome]
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[TargetGenome]:
         for item in self.root:
             yield item
 

@@ -3,9 +3,9 @@ import os
 import pathlib
 import sys
 from tempfile import NamedTemporaryFile
-from typing import Optional
+from typing import Optional, Self
 
-from pydantic import Field, DirectoryPath, KafkaDsn
+from pydantic import Field, DirectoryPath, KafkaDsn, model_validator
 from pydantic_settings import BaseSettings
 
 
@@ -51,22 +51,17 @@ class Settings(BaseSettings):
         description="Path to a sqlite database",
         default_factory=lambda: NamedTemporaryFile(delete=False).name,
     )
-    KAFKA_BOOTSTRAP_SERVER: KafkaDsn
-    KAFKA_CONSUMER_TOPIC: str = Field(default="pipeline-launch")
-    KAFKA_PRODUCER_TOPIC: str = Field(default="pipeline-status")
+    KAFKA_BOOTSTRAP_SERVER: Optional[KafkaDsn] = Field(default=None)
+    KAFKA_CONSUMER_TOPIC: Optional[str] = Field(default="pipeline-launch")
+    KAFKA_PRODUCER_TOPIC: Optional[str] = Field(default="pipeline-status")
 
+    @model_validator(mode="after")
+    def check_mandatory_settings(self) -> Self:
+        if "pyvatti.cli" not in sys.modules:
+            # kafka parameters are optional in the CLI
+            if self.KAFKA_BOOTSTRAP_SERVER is None:
+                raise ValueError(
+                    "Missing KAFKA_BOOTSTRAP_SERVER in main (optional only for CLI)"
+                )
 
-if "pytest" in sys.modules:
-    settings = Settings(
-        TOWER_TOKEN="test",
-        TOWER_WORKSPACE="test",
-        GLOBUS_DOMAIN="https://example.com",
-        GLOBUS_CLIENT_ID="test",
-        GLOBUS_CLIENT_SECRET="test",
-        GLOBUS_SCOPES="test",
-        KAFKA_BOOTSTRAP_SERVER="kafka://localhost:9092",
-        GCP_PROJECT="testproject",
-        GCP_LOCATION="europe-west2",
-    )
-else:
-    settings = Settings()
+        return self

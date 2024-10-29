@@ -8,9 +8,9 @@ import tempfile
 import yaml
 from google.cloud import storage
 
+from pyvatti.config import Settings
 from pyvatti.messagemodels import JobRequest
 from pyvatti.helm import render_template
-from pyvatti.config import settings
 from pyvatti.jobstates import States
 
 logger = logging.getLogger(__name__)
@@ -22,7 +22,7 @@ class ResourceHandler(abc.ABC):
         self.intp_id = intp_id
 
     @abc.abstractmethod
-    def create_resources(self, job_model: JobRequest):
+    def create_resources(self, job_model: JobRequest) -> None:
         """Create the compute resources needed to run a job
 
         For example:
@@ -32,7 +32,7 @@ class ResourceHandler(abc.ABC):
         ...
 
     @abc.abstractmethod
-    def destroy_resources(self, state):
+    def destroy_resources(self, state: States) -> None:
         """Destroy the created resources
 
         Cleaning up properly is very important to keep sensitive data safe
@@ -48,28 +48,35 @@ class DummyResourceHandler(ResourceHandler):
     def __init__(self, intp_id: str):
         self.intp_id = intp_id
 
-    def create_resources(self, job_model: JobRequest):
+    def create_resources(self, job_model: JobRequest) -> None:
         pass
 
-    def destroy_resources(self, state):
+    def destroy_resources(self, state: States) -> None:
         pass
 
 
 class GoogleResourceHandler(ResourceHandler):
-    def __init__(
-        self, intp_id, project_id=settings.GCP_PROJECT, location=settings.GCP_LOCATION
-    ):
+    def __init__(self, intp_id: str, settings: Settings) -> None:
         super().__init__(intp_id=intp_id.lower())
-        self.project_id = project_id
+
+        self._project_id = settings.GCP_PROJECT
+        self._helm_chart_path = settings.HELM_CHART_PATH
+        self._namespace = settings.NAMESPACE
+        self._location = settings.GCP_LOCATION
+        self._settings = settings
         self._bucket_root = f"{str(settings.NAMESPACE)}-{self.intp_id}"
         self._work_bucket = f"{self._bucket_root}-work"
         self._results_bucket = f"{self._bucket_root}-results"
-        self._location = location
         self._work_bucket_existed_on_create = False
         self._results_bucket_existed_on_create = False
         self._helm_installed = False
 
-    def create_resources(self, job_model: JobRequest):
+    @property
+    def settings(self) -> Settings:
+        """A (read only) pydantic settings object"""
+        return self._settings
+
+    def create_resources(self, job_model: JobRequest) -> None:
         """Create some resources to run the job, including:
 
         - Create a bucket with lifecycle management
@@ -83,32 +90,33 @@ class GoogleResourceHandler(ResourceHandler):
                 job_model=job_model,
                 work_bucket_path=self._work_bucket,
                 results_bucket_path=self._results_bucket,
+                settings=self._settings,
             )
         except ValueError:
             self._helm_installed = False
         else:
             self._helm_installed = True
 
-    def destroy_resources(self, state):
+    def destroy_resources(self, state: States) -> None:
         if self._helm_installed:
-            helm_uninstall(self.intp_id)
+            helm_uninstall(self.intp_id, namespace=self._namespace)
 
         if state == States.FAILED:
             self._delete_buckets(results=True)
         else:
             self._delete_buckets(results=False)
 
-    def make_buckets(self, job_model: JobRequest):
+    def make_buckets(self, job_model: JobRequest) -> None:
         """Create the buckets needed to run the job"""
         self._make_work_bucket(job_model)
         self._make_results_bucket(job_model)
 
-    def _make_work_bucket(self, job_model: JobRequest):
+    def _make_work_bucket(self, _: JobRequest) -> None:
         """Unfortunately google cloud storage doesn't support async
 
         The work bucket has much stricter lifecycle policies than the results bucket
         """
-        client = storage.Client(project=self.project_id)
+        client = storage.Client(project=self._project_id)
         bucket: storage.Bucket = client.bucket(self._work_bucket)
 
         if bucket.exists():
@@ -119,22 +127,24 @@ class GoogleResourceHandler(ResourceHandler):
             self._work_bucket_existed_on_create = True
             raise FileExistsError
 
-        bucket.add_lifecycle_abort_incomplete_multipart_upload_rule(age=1)
+        bucket.add_lifecycle_abort_incomplete_multipart_upload_rule(**{"age": 1})
 
         # these file suffixes are guaranteed to contain sensitive data
         bucket.add_lifecycle_delete_rule(
-            age=1,
-            matches_suffix=[
-                ".vcf",
-                ".pgen",
-                ".pvar",
-                ".psam",
-                ".bim",
-                ".bed",
-                ".fam",
-                ".zst",
-                ".gz",
-            ],
+            **{
+                "age": 1,
+                "matches_suffix": [
+                    ".vcf",
+                    ".pgen",
+                    ".pvar",
+                    ".psam",
+                    ".bim",
+                    ".bed",
+                    ".fam",
+                    ".zst",
+                    ".gz",
+                ],
+            }
         )
 
         # this is so dumb!
@@ -150,8 +160,8 @@ class GoogleResourceHandler(ResourceHandler):
 
         bucket.create(location=self._location)
 
-    def _make_results_bucket(self, job_model: JobRequest):
-        client = storage.Client(project=self.project_id)
+    def _make_results_bucket(self, _: JobRequest) -> None:
+        client = storage.Client(project=self._project_id)
         bucket: storage.Bucket = client.bucket(self._results_bucket)
 
         if bucket.exists():
@@ -160,8 +170,8 @@ class GoogleResourceHandler(ResourceHandler):
             raise FileExistsError
 
         # results stay live for 7 days
-        bucket.add_lifecycle_delete_rule(age=7)
-        bucket.add_lifecycle_abort_incomplete_multipart_upload_rule(age=1)
+        bucket.add_lifecycle_delete_rule(**{"age": 7})
+        bucket.add_lifecycle_abort_incomplete_multipart_upload_rule(**{"age": 1})
 
         # don't soft delete, it's annoying
         soft_policy = storage.bucket.SoftDeletePolicy(bucket)
@@ -172,7 +182,7 @@ class GoogleResourceHandler(ResourceHandler):
 
         bucket.create(location=self._location)
 
-    def _delete_buckets(self, results=False):
+    def _delete_buckets(self, results: bool = False) -> None:
         if self._work_bucket_existed_on_create:
             # don't delete a bucket that existed before the job was created
             # otherwise a bad job will interfere with an existing good job
@@ -181,7 +191,7 @@ class GoogleResourceHandler(ResourceHandler):
             )
             return
 
-        client = storage.Client(project=self.project_id)
+        client = storage.Client(project=self._project_id)
         bucket = client.get_bucket(self._work_bucket)
 
         if not bucket.exists():
@@ -204,18 +214,25 @@ class GoogleResourceHandler(ResourceHandler):
 
 
 def helm_install(
-    job_model: JobRequest, work_bucket_path: str, results_bucket_path: str
-):
+    job_model: JobRequest,
+    work_bucket_path: str,
+    results_bucket_path: str,
+    settings: Settings,
+) -> None:
+    helm_chart_path = settings.HELM_CHART_PATH
+    namespace = settings.NAMESPACE
+
     release_name: str = job_model.pipeline_param.id.lower()
     template = render_template(
         job_model,
         work_bucket_path=work_bucket_path,
         results_bucket_path=results_bucket_path,
+        settings=settings,
     )
 
     with tempfile.NamedTemporaryFile(mode="wt") as temp_f:
         yaml.dump(template, temp_f)
-        cmd = f"helm install {release_name} {settings.HELM_CHART_PATH} -n {str(settings.NAMESPACE)} -f {temp_f.name}"
+        cmd = f"helm install {release_name} {helm_chart_path} -n {str(namespace)} -f {temp_f.name}"
         helm: subprocess.CompletedProcess = subprocess.run(cmd)
 
     if helm.returncode != 0:
@@ -225,8 +242,8 @@ def helm_install(
         logger.info("helm install OK")
 
 
-def helm_uninstall(release_name: str):
-    cmd = f"helm uninstall --namespace {str(settings.NAMESPACE)} {release_name.lower()}"
+def helm_uninstall(release_name: str, namespace: str) -> None:
+    cmd = f"helm uninstall --namespace {namespace} {release_name.lower()}"
     helm: subprocess.CompletedProcess = subprocess.run(cmd)
 
     if helm.returncode != 0:

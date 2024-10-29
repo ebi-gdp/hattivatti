@@ -9,24 +9,20 @@ import pathlib
 from typing import Optional
 
 import yaml
-from pydantic import BaseModel, Field, field_validator
-from pyvatti.config import settings
+from pydantic import BaseModel, Field, field_validator, ConfigDict
+from pyvatti.config import Settings
 from pyvatti.messagemodels import JobRequest
 
 
-def parse_value_template():
-    values_template = pathlib.Path(settings.HELM_CHART_PATH / "values-example.yaml")
+def parse_value_template(helm_chart_path: pathlib.Path) -> dict:
+    values_template = helm_chart_path / "values-example.yaml"
     return yaml.safe_load(values_template.read_text())
 
 
-def check_gcp_bucket(name: str) -> str:
-    if not name.startswith("gs://"):
-        raise ValueError("Bucket name doesn't start with gs://")
-    return name
-
-
-class NextflowParams(BaseModel, validate_assignment=True):
+class NextflowParams(BaseModel):
     """Represents nextflow configuration values that can be templated by helm"""
+
+    model_config = ConfigDict(validate_assignment=True)
 
     workBucketPath: str
     gcpProject: str
@@ -35,11 +31,18 @@ class NextflowParams(BaseModel, validate_assignment=True):
     wave: bool
     fusion: bool
 
-    check_bucket = field_validator("workBucketPath")(check_gcp_bucket)
+    @field_validator("workBucketPath")  # type: ignore
+    @classmethod
+    def check_gcp_bucket(cls, name: str):
+        if not name.startswith("gs://"):
+            raise ValueError("Bucket name doesn't start with gs://")
+        return name
 
 
-class CalcJobParams(BaseModel, validate_assignment=True):
+class CalcJobParams(BaseModel):
     """Represents workflow instance values that can be templated by helm"""
+
+    model_config = ConfigDict(validate_assignment=True)
 
     input: str
     min_overlap: float = Field(ge=0, le=1)
@@ -50,7 +53,12 @@ class CalcJobParams(BaseModel, validate_assignment=True):
     format: str
     outdir: str
 
-    check_bucket = field_validator("outdir")(check_gcp_bucket)
+    @field_validator("outdir")  # type: ignore
+    @classmethod
+    def check_gcp_bucket(cls, name: str):
+        if not name.startswith("gs://"):
+            raise ValueError("Bucket name doesn't start with gs://")
+        return name
 
 
 class JobInput(BaseModel):
@@ -80,8 +88,10 @@ class Secrets(BaseModel):
     towerId: str
 
 
-class HelmValues(BaseModel, validate_assignment=True):
+class HelmValues(BaseModel):
     """Represents all fields in the helm chart that can be templated"""
+
+    model_config = ConfigDict(validate_assignment=True)
 
     baseImage: str
     dockerTag: str
@@ -99,11 +109,9 @@ class HelmValues(BaseModel, validate_assignment=True):
     globflowInput: str
     globflowParams: GlobflowParams
     secrets: Secrets
-    # don't model this
-    serviceAccount: dict
 
 
-def _add_secrets(job: HelmValues):
+def _add_secrets(job: HelmValues, settings: Settings) -> None:
     """Add secrets from the settings object"""
     job.secrets.towerToken = settings.TOWER_TOKEN
     job.secrets.towerId = settings.TOWER_WORKSPACE
@@ -113,21 +121,29 @@ def _add_secrets(job: HelmValues):
     job.secrets.globusScopes = settings.GLOBUS_SCOPES
 
 
-def _add_bucket_path(job, bucketPath):
+def _add_bucket_path(job: JobRequest, bucketPath: str) -> None:
     """Add bucket details to the job request"""
+    if bucketPath.startswith("gs://"):
+        raise ValueError("Raw bucket names only, please drop the gs:// prefix")
+
     for x in ("geno", "pheno", "variants"):
         for genome in job.pipeline_param.target_genomes:
             setattr(genome, x, f"gs://{bucketPath}/data/{getattr(genome, x)}")
 
 
 def render_template(
-    job: JobRequest, work_bucket_path: str, results_bucket_path: str
+    job: JobRequest, work_bucket_path: str, results_bucket_path: str, settings: Settings
 ) -> dict:
     """Render the helm template using new values from the job model"""
     _add_bucket_path(job, work_bucket_path)
 
-    job_values: HelmValues = HelmValues(**parse_value_template())
-    _add_secrets(job_values)
+    job_values: HelmValues = HelmValues(
+        **parse_value_template(settings.HELM_CHART_PATH)
+    )
+    _add_secrets(job_values, settings)
+
+    if settings.GCP_PROJECT is None or settings.GCP_LOCATION is None:
+        raise ValueError("Missing GCP_PROJECT or GCP_LOCATION")
 
     # set bucket paths to follow nextflow standards (gs:// prefix and can't use root of bucket)
     job_values.globflowParams.outdir = f"gs://{work_bucket_path}/data"
