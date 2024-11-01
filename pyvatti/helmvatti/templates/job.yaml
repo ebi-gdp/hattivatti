@@ -3,19 +3,31 @@ kind: Job
 metadata:
   name: {{ .Release.Name }}
 spec:
-  ttlSecondsAfterFinished: 100
-  backoffLimit: 0
+  ttlSecondsAfterFinished: {{ .Values.ttlSecondsAfterFinished | default 3600 }}
+  backoffLimit: {{ .Values.backoffLimit | default 0 }}
   template:
     metadata:
       annotations:
         cluster-autoscaler.kubernetes.io/safe-to-evict: "false"
     spec:
-      serviceAccountName: nextflow
+      serviceAccountName: {{.Values.serviceAccount.name }}
       initContainers:
         - name: globflow
           image: {{ .Values.baseImage }}:{{ .Values.dockerTag }}
           imagePullPolicy: {{ .Values.pullPolicy }}
-          command: ['sh', '-c', "nextflow run https://gitlab.ebi.ac.uk/gdp-public/globflow.git -params-file /opt/params.yml -c /opt/nxf/nxf.config"]
+          command:
+            - "nextflow"
+            - "run"
+            - "gdp-public/globflow"
+            - "-hub"
+            - "ebi"
+            - "-r"
+            - "2.0.0"
+            - "-params-file"
+            - "/opt/nxf/params.yml"
+            - "-c"
+            - "/opt/nxf/nxf.config"
+            - "--decrypt"
           env:
             - name: NXF_SCM_FILE
               value: /opt/nxf/scm
@@ -25,47 +37,70 @@ spec:
               memory: 2G
               ephemeral-storage: 10G
           volumeMounts:
-            - name: transfer-config-volume
-              mountPath: /opt/
-            - name: transfer-config-nxf-volume
+            - name: transfer-config
               mountPath: /opt/nxf/
+              readOnly: true
             - name: globflow-secrets
               mountPath: /opt/globflow/
-              readOnly: true         
+              readOnly: true
       containers:
         - name: pgsc-calc
           image: {{ .Values.baseImage }}:{{ .Values.dockerTag }}
           imagePullPolicy: {{ .Values.pullPolicy }}
-          command: ['sh', '-c', "nextflow run -name ${WORKFLOW_ID} https://gitlab.ebi.ac.uk/gdp-public/pgsc_calc.git -r {{ .Chart.AppVersion }} -params-file /opt/params.yml -c /opt/nxf.config"]
+          command:
+            - "nextflow"
+            - "run"
+            - "-name"
+            - "{{ .Release.Namespace }}-{{ .Release.Name }}"
+            - "gdp-public/pgsc_calc"
+            - "-hub"
+            - "ebi"
+            - "-r"
+            - "{{ .Chart.AppVersion }}"
+            - "-params-file"
+            - "/opt/nxf/params.yml"
+            - "-c"
+            - "/opt/nxf/nxf.config"
           env:
-            - name: WORKFLOW_ID
-              value: {{ .Release.Namespace }}-{{ .Release.Name }}
             - name: NXF_SCM_FILE
-              value: /opt/scm
+              value: /opt/nxf/scm
           resources:
             requests:
               cpu: "1"
               memory: 2G
               ephemeral-storage: 10G
           volumeMounts:
-            - name: job-config-volume
-              mountPath: /opt/
+            - name: pgs-config-volume
+              mountPath: /opt/nxf
+              readOnly: true
       volumes:
-        - name: transfer-config-nxf-volume
+        - name: transfer-config
           configMap:
-            name: {{ .Release.Name }}-jobconfig
+            name: {{ .Release.Name }}-transfer-config
             items:
             - key: nxf.config
               path: nxf.config
             - key: scm
               path: scm
-        - name: transfer-config-volume
-          configMap:
-            name: {{ .Release.Name }}-transferconfig              
+            - key: params.yml
+              path: params.yml
+            - key: input.json
+              path: input.json
+            - key: key.json
+              path: key.json
         - name: globflow-secrets
           secret:
-            secretName: {{ .Release.Name }}-globus
-        - name: job-config-volume
+            secretName: {{ .Release.Name }}-transfer-secrets
+        - name: pgs-config-volume
           configMap:
-            name: {{ .Release.Name }}-jobconfig
-      restartPolicy: Never
+            name: {{ .Release.Name }}-pgs-config
+            items:
+            - key: nxf.config
+              path: nxf.config
+            - key: input.json
+              path: input.json
+            - key: params.yml
+              path: params.yml
+            - key: scm
+              path: scm
+      restartPolicy: {{ .Values.restartPolicy | default "Never" }}

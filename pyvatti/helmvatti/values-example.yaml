@@ -3,53 +3,75 @@
 # Declare variables to be passed into your templates.
 
 baseImage: "docker.io/nextflow/nextflow"
-dockerTag: "23.10.1"
+dockerTag: "24.10.0"
 pullPolicy: "IfNotPresent"
+
+# 1. transfer initContainer configuration
+# this config gets encrypted files downloaded from a globus collection to a bucket in clear text
+globflowInput:
+  dir_path_on_guest_collection: test@example.com/globuscollection
+  files:
+  - filename: hapnest.psam.c4gh
+    size: 8669
+  - filename: hapnest.pgen.c4gh
+    size: 278825058
+  - filename: hapnest.pvar.c4gh
+    size: 215004174
+
+secrets:
+  globusDomain: https://example.com
+  globusClientId: clientid
+  globusClientSecret: clientsecret
+  towerToken: towertoken
+  towerId: "towerid"
+  keyHandlerToken: keyhandlertoken
+  keyHandlerPassword: keyhandlerpassword
+  keyHandlerURL: https://example.com/key-handler/
+
+keyHandlerSecret:
+  secretId: "77451C57-0FCC-460F-91A3-E0DED05B440F"
+  secretIdVersion: "1"
+
+globflowParams:
+  outdir: "gs://testbucket/data" # update this to point to a new bucket
+  # these values won't need to be updated
+  input: /opt/nxf/input.json
+  secret_key: /opt/nxf/key.json
+  config_application: /opt/globflow/application.properties
+  config_crypt4gh: /opt/globflow/application-crypt4gh-secret-manager.properties
+
+# nextflow configuration shared across both the init container and container
+nxfParams:
+  workBucketPath: "gs://testbucket/work"
+  gcpProject: "project-id"
+  location: "gcp-location"
+  spot: true
+  wave: true
+  fusion: true
 
 serviceAccount:
   create: true
   name: nextflow
 
-# nextflow configuration
-nxfParams:
-  workBucketPath: "gs://intervene-gcp-nxf/work"
-  gcpProject: dummy
-  location: dummy
-  spot: false
-  wave: true
-  fusion: true
-
+# 2: the pgs calculation job, using cleartext data in the bucket
 # an input file describing the structure of target genomes
-calcWorkflowInput: '[{"sampleset":"hgdp","chrom":null,"vcf_import_dosage":false,"geno":"gs://intervene-gcp-nxf/data/hapnest.pgen","pheno":"gs://intervene-gcp-nxf/data/hapnest.psam","variants":"gs://intervene-gcp-nxf/data/hapnest.pvar","format":"pfile"}]'
+calcWorkflowInput:
+  - sampleset: "hgdp"
+    chrom: null
+    vcf_import_dosage: false
+    geno: "gs://testbucket/data/hapnest.pgen"
+    pheno: "gs://testbucket/data/hapnest.psam"
+    variants: "gs://testbucket/data/hapnest.pvar"
+    format: "pfile"
 
-# job configuration via a nextflow parameters file
+# pgs job configuration via a nextflow parameters file
 calcJobParams:
-  input: "/opt/input.json"
+  input: "/opt/nxf/input.json"
   min_overlap: 0
   pgs_id: PGS000802
   pgp_id: null
   trait_efo: null
   target_build: GRCh38
   format: json
-  outdir: "gs://intervene-gcp-nxf/results"
+  outdir: "gs://testbucket/results"
 
-
-globflowInput: '{"dir_path_on_guest_collection":"bwingfield@ebi.ac.uk/test_hapnest/","files":[{"filename":"hapnest.pvar","size":214912210},{"filename":"hapnest.pgen","size":278705850}, {"filename":"hapnest.psam","size":8517}]}'
-
-globflowParams:
-  input: /opt/input.json
-  outdir: "gs://intervene-gcp-nxf/data"
-  config_secrets: /opt/globflow/secrets.properties
-  secretId: dummy
-  secretIdVersion: dummy
-
-# these secrets are never written to a file, they're used to create secrets
-# values are set with --set, using environment variables from the local machine
-# https://stackoverflow.com/a/49930497 
-secrets:
-  globusDomain: dummy
-  globusClientId: dummy
-  globusClientSecret: dummy
-  globusScopes: dummy
-  towerToken: dummy
-  towerId: dummy
