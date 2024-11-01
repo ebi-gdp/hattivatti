@@ -22,6 +22,7 @@ secrets:
   globusDomain: https://example.com
   globusClientId: clientid
   globusClientSecret: clientsecret
+  globusScopes: scopes
   towerToken: towertoken
   towerId: "towerid"
   keyHandlerToken: keyhandlertoken
