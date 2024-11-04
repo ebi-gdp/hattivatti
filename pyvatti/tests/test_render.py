@@ -1,6 +1,9 @@
 import json
+import subprocess
+import tempfile
 
 import pytest
+import yaml
 
 from pyvatti.helm import render_template
 from pyvatti.messagemodels import JobRequest
@@ -24,6 +27,9 @@ def test_render(message):
         KAFKA_BOOTSTRAP_SERVER="kafka://localhost:9092",
         GCP_PROJECT="testproject",
         GCP_LOCATION="europe-west2",
+        KEY_HANDLER_TOKEN="test",
+        KEY_HANDLER_URL="https://test.example.com/keyhandler",
+        KEY_HANDLER_PASSWORD="<PASSWORD>",
     )
 
     with open(message) as f:
@@ -43,3 +49,10 @@ def test_render(message):
 
     # check parameters have been set in the template
     assert template["nxfParams"]["gcpProject"] == "testproject"
+
+    # test that the values file can create a valid template using the helm CLI
+    with tempfile.NamedTemporaryFile(mode="wt") as temp_f:
+        yaml.dump(template, temp_f)
+        cmd = ["helm", "template", settings.HELM_CHART_PATH, "--values", temp_f.name]
+        helm: subprocess.CompletedProcess = subprocess.run(cmd)
+        assert helm.returncode == 0

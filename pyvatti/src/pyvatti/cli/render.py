@@ -19,6 +19,8 @@ def main() -> None:
     )
     parser.add_argument("--message_path", required=True)
     parser.add_argument("--env_path", required=True)
+    parser.add_argument("--bucket_name", required=True)
+
     parser.add_argument("--out_path", required=True)
 
     args = parser.parse_args()
@@ -32,8 +34,8 @@ def main() -> None:
     job: JobRequest = JobRequest(**msg)
     template: dict = render_template(
         job=job,
-        work_bucket_path="testpathwork/",
-        results_bucket_path="testpathresults",
+        work_bucket_path=args.bucket_name,
+        results_bucket_path=args.bucket_name,
         settings=settings,
     )
     logger.info("Rendered helm values file OK")

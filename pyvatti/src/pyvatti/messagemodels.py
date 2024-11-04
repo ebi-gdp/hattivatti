@@ -10,8 +10,8 @@ from pydantic import (
     field_validator,
     Field,
     UUID4,
-    field_serializer,
     RootModel,
+    ConfigDict,
 )
 
 
@@ -79,7 +79,7 @@ class TargetGenome(BaseModel):
 
     >>> data = {"sampleset": "test", "chrom": None, "geno": "hi.pgen", "pheno": "hi.psam", "variants": "hi.pvar.zst", "format": "pfile"}
     >>> TargetGenome(**data)
-    TargetGenome(sampleset='test', chrom=None, vcf_import_dosage=False, geno=PosixPath('hi.pgen'), pheno=PosixPath('hi.psam'), variants=PosixPath('hi.pvar.zst'), format=<TargetFormat.PFILE: 'pfile'>)
+    TargetGenome(sampleset='test', chrom=None, vcf_import_dosage=False, geno='hi.pgen', pheno='hi.psam', variants='hi.pvar.zst', format='pfile')
 
     >>> TargetGenome(**data).model_dump_json()
     '{"sampleset":"test","chrom":null,"vcf_import_dosage":false,"geno":"hi.pgen","pheno":"hi.psam","variants":"hi.pvar.zst","format":"pfile"}'
@@ -88,8 +88,10 @@ class TargetGenome(BaseModel):
 
     >>> data = {"sampleset": "test", "chrom": None, "geno": "hi.vcf.gz", "pheno": "hi.vcf.gz", "variants": "hi.vcf.gz", "format": "vcf"}
     >>> TargetGenome(**data)
-    TargetGenome(sampleset='test', chrom=None, vcf_import_dosage=False, geno=PosixPath('hi.vcf.gz'), pheno=PosixPath('hi.vcf.gz'), variants=PosixPath('hi.vcf.gz'), format=<TargetFormat.VCF: 'vcf'>)
+    TargetGenome(sampleset='test', chrom=None, vcf_import_dosage=False, geno='hi.vcf.gz', pheno='hi.vcf.gz', variants='hi.vcf.gz', format='vcf')
     """
+
+    model_config = ConfigDict(validate_assignment=True, use_enum_values=True)
 
     sampleset: Annotated[str, Field(description="A human label for a cohort / dataset")]
     chrom: Annotated[
@@ -107,20 +109,28 @@ class TargetGenome(BaseModel):
             default=False,
         ),
     ]
+    # not pathlib.Path because it messes up gs:// prefix
     geno: Annotated[
-        pathlib.Path,
+        str,
         Field(description="Path to a genotype file (e.g. pgen / bed / vcf)"),
     ]
     pheno: Annotated[
-        pathlib.Path, Field(description="Path to a phenotype file (e.g. psam / fam)")
+        str, Field(description="Path to a phenotype file (e.g. psam / fam)")
     ]
     variants: Annotated[
-        pathlib.Path,
+        str,
         Field(description="Path to a variant information file (e.g. bim / pvar"),
     ]
     format: Annotated[
         TargetFormat, Field(description="What format are the target genomes in?")
     ]
+
+    @field_validator("geno", "pheno", "variants")
+    @classmethod
+    def check_file_suffix(cls, name: str) -> str:
+        if name.endswith(".c4gh"):
+            raise ValueError("Calculation workflow can't handle encrypted files")
+        return name
 
     @field_validator("sampleset")  # type: ignore
     @classmethod
@@ -133,11 +143,12 @@ class TargetGenome(BaseModel):
 
     @field_validator("geno")  # type: ignore
     @classmethod
-    def check_geno_suffix(cls, value: pathlib.Path) -> pathlib.Path:
-        match suffix := value.suffix:
+    def check_geno_suffix(cls, value: str) -> str:
+        path = pathlib.Path(value)
+        match suffix := path.suffix:
             case ".pgen" | ".bed":
                 pass
-            case ".gz" if ".vcf" in value.suffixes:
+            case ".gz" if ".vcf" in path.suffixes:
                 pass
             case _:
                 raise ValueError(f"Genotype file {suffix=} is not a supported format")
@@ -145,13 +156,15 @@ class TargetGenome(BaseModel):
 
     @field_validator("variants")  # type: ignore
     @classmethod
-    def check_variant_suffix(cls, value: pathlib.Path) -> pathlib.Path:
-        match suffix := value.suffix:
+    def check_variant_suffix(cls, value: str) -> str:
+        path = pathlib.Path(value)
+
+        match suffix := path.suffix:
             case ".pvar" | ".bim":
                 pass
-            case ".zst" if ".pvar" in value.suffixes or ".bim" in value.suffixes:
+            case ".zst" if ".pvar" in path.suffixes or ".bim" in path.suffixes:
                 pass
-            case ".gz" if ".bim" in value.suffixes or ".vcf" in value.suffixes:
+            case ".gz" if ".bim" in path.suffixes or ".vcf" in path.suffixes:
                 pass
             case _:
                 raise ValueError(
@@ -162,11 +175,13 @@ class TargetGenome(BaseModel):
 
     @field_validator("pheno")  # type: ignore
     @classmethod
-    def check_pheno_suffix(cls, value: pathlib.Path) -> pathlib.Path:
-        match suffix := value.suffix:
+    def check_pheno_suffix(cls, value: str) -> str:
+        path = pathlib.Path(value)
+
+        match suffix := path.suffix:
             case ".psam" | ".fam":
                 pass
-            case ".gz" if ".vcf" in value.suffixes:
+            case ".gz" if ".vcf" in path.suffixes:
                 pass
             case _:
                 raise ValueError(
@@ -178,8 +193,8 @@ class TargetGenome(BaseModel):
     @model_validator(mode="after")
     def check_format_and_filenames(self) -> Self:
         """Checks the declared format aligns with the file list"""
-        paths: list[pathlib.Path] = [self.geno, self.pheno, self.variants]
-        suffixes: list[list[str]] = [x.suffixes for x in paths]
+        paths: list[str] = [self.geno, self.pheno, self.variants]
+        suffixes: list[list[str]] = [pathlib.Path(x).suffixes for x in paths]
         extensions: set[str] = {item for sublist in suffixes for item in sublist}
 
         # PLINK1/2 files are a triplet of variant information file (text), genotype (binary), and sample information file (text)
@@ -211,10 +226,6 @@ class TargetGenome(BaseModel):
                 raise ValueError("Invalid format")
 
         return self
-
-    @field_serializer("geno", "pheno", "variants")
-    def serialise_path_to_str(self, path: pathlib.Path) -> str:
-        return str(path)
 
 
 class SamplesheetFormat(str, enum.Enum):
@@ -301,9 +312,16 @@ class SecretKeyDetails(BaseModel):
     SecretKeyDetails(secret_id=UUID('81d5c400-21b4-4e88-8208-8d64c9920283'), secret_id_version='1')
     """
 
-    secret_id: Annotated[UUID4, Field(description="UUIDv4 of secret key")]
+    secret_id: Annotated[
+        UUID4, Field(description="UUIDv4 of secret key", serialization_alias="secretId")
+    ]
     secret_id_version: Annotated[
-        str, Field(description="Version of secret key", coerce_numbers_to_str=True)
+        str,
+        Field(
+            description="Version of secret key",
+            serialization_alias="secretIdVersion",
+            coerce_numbers_to_str=True,
+        ),
     ]
 
 
@@ -338,6 +356,8 @@ class JobRequest(BaseModel):
     >>> JobRequest(**d)  # doctest: +ELLIPSIS
     JobRequest(globus_details=GlobusConfig(dir_path_on_guest_collection...
     """
+
+    model_config = ConfigDict(validate_assignment=True)
 
     globus_details: Annotated[
         GlobusConfig,

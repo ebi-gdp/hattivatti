@@ -5,7 +5,7 @@ import sys
 from tempfile import NamedTemporaryFile
 from typing import Optional, Self
 
-from pydantic import Field, DirectoryPath, KafkaDsn, model_validator
+from pydantic import Field, DirectoryPath, KafkaDsn, model_validator, HttpUrl
 from pydantic_settings import BaseSettings
 
 
@@ -54,6 +54,15 @@ class Settings(BaseSettings):
     KAFKA_BOOTSTRAP_SERVER: Optional[KafkaDsn] = Field(default=None)
     KAFKA_CONSUMER_TOPIC: Optional[str] = Field(default="pipeline-launch")
     KAFKA_PRODUCER_TOPIC: Optional[str] = Field(default="pipeline-status")
+    KEY_HANDLER_TOKEN: str = Field(
+        description="Token to authenticate with the key handler service"
+    )
+    KEY_HANDLER_PASSWORD: str = Field(
+        description="Password used by the globus file handler to decrypt the secret key"
+    )
+    KEY_HANDLER_URL: Optional[HttpUrl] = Field(
+        description="URL used to contact the key handler service"
+    )
 
     @model_validator(mode="after")
     def check_mandatory_settings(self) -> Self:

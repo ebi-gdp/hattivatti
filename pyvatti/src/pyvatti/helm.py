@@ -4,14 +4,22 @@ This module provides classes for validating and rendering a helm template.
 It's assumed input parameters are validated by JobModels. This module aims to model and
 validate generated job configuration, like work bucket names.
 """
-
 import pathlib
 from typing import Optional
 
 import yaml
-from pydantic import BaseModel, Field, field_validator, ConfigDict
+from pydantic import (
+    BaseModel,
+    Field,
+    field_validator,
+    ConfigDict,
+    UUID4,
+    field_serializer,
+    HttpUrl,
+)
+
 from pyvatti.config import Settings
-from pyvatti.messagemodels import JobRequest
+from pyvatti.messagemodels import JobRequest, GlobusConfig, TargetGenome
 
 
 def parse_value_template(helm_chart_path: pathlib.Path) -> dict:
@@ -74,24 +82,41 @@ class JobInput(BaseModel):
 class GlobflowParams(BaseModel):
     input: str
     outdir: str
-    config_secrets: str
+    config_application: str
+    config_crypt4gh: str
 
 
 class Secrets(BaseModel):
-    """These secrets must be templated with pyvatti environment variables"""
-
     globusDomain: str
     globusClientId: str
     globusClientSecret: str
     globusScopes: str
     towerToken: str
     towerId: str
+    keyHandlerToken: str
+    keyHandlerPassword: str
+    keyHandlerURL: HttpUrl
+
+    @field_serializer("keyHandlerURL")
+    @classmethod
+    def url_to_string(cls, url: HttpUrl) -> str:
+        return str(url)
+
+
+class KeyHandlerDetails(BaseModel):
+    secretId: UUID4
+    secretIdVersion: str
+
+    @field_serializer("secretId")
+    @classmethod
+    def uuid_to_str(cls, uuid: UUID4) -> str:
+        return str(uuid).upper()
 
 
 class HelmValues(BaseModel):
     """Represents all fields in the helm chart that can be templated"""
 
-    model_config = ConfigDict(validate_assignment=True)
+    model_config = ConfigDict(validate_assignment=True, use_enum_values=True)
 
     baseImage: str
     dockerTag: str
@@ -101,12 +126,12 @@ class HelmValues(BaseModel):
     serviceAccount: dict
 
     nxfParams: NextflowParams
-    # a JSON string
-    calcWorkflowInput: str
+
+    calcWorkflowInput: list[TargetGenome]
 
     calcJobParams: CalcJobParams
-    # a JSON string
-    globflowInput: str
+    keyHandlerSecret: KeyHandlerDetails
+    globflowInput: GlobusConfig
     globflowParams: GlobflowParams
     secrets: Secrets
 
@@ -119,6 +144,9 @@ def _add_secrets(job: HelmValues, settings: Settings) -> None:
     job.secrets.globusClientId = settings.GLOBUS_CLIENT_ID
     job.secrets.globusClientSecret = settings.GLOBUS_CLIENT_SECRET
     job.secrets.globusScopes = settings.GLOBUS_SCOPES
+    job.secrets.keyHandlerToken = settings.KEY_HANDLER_TOKEN
+    job.secrets.keyHandlerPassword = settings.KEY_HANDLER_PASSWORD
+    job.secrets.keyHandlerURL = settings.KEY_HANDLER_URL
 
 
 def _add_bucket_path(job: JobRequest, bucketPath: str) -> None:
@@ -152,12 +180,16 @@ def render_template(
     job_values.nxfParams.location = settings.GCP_LOCATION
     job_values.calcJobParams.outdir = f"gs://{results_bucket_path}/results"
 
-    job_values.calcWorkflowInput = job.pipeline_param.target_genomes.model_dump_json()
-    job_values.globflowInput = job.globus_details.model_dump_json()
+    job_values.calcWorkflowInput = job.pipeline_param.target_genomes
+    job_values.globflowInput = job.globus_details
 
     for x in ("pgs_id", "pgp_id", "trait_efo", "target_build"):
         setattr(
             job_values.calcJobParams, x, getattr(job.pipeline_param.nxf_params_file, x)
         )
 
+    job_values.keyHandlerSecret.secretId = job.secret_key_details.secret_id
+    job_values.keyHandlerSecret.secretIdVersion = (
+        job.secret_key_details.secret_id_version
+    )
     return job_values.model_dump()
