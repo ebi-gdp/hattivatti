@@ -4,6 +4,7 @@ This module provides classes for validating and rendering a helm template.
 It's assumed input parameters are validated by JobModels. This module aims to model and
 validate generated job configuration, like work bucket names.
 """
+
 import pathlib
 from typing import Optional
 
