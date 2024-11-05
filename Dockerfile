@@ -1,4 +1,7 @@
-FROM python:3.12 AS build
+
+FROM python:3.12-slim-bullseye
+
+ARG TARGETARCH
 
 ENV POETRY_NO_INTERACTION=1 \
     POETRY_VIRTUALENVS_IN_PROJECT=1 \
@@ -9,26 +12,17 @@ WORKDIR /app/
 
 RUN pip install poetry
 
-COPY pyvatti/poetry.lock pyvatti/pyproject.toml ./
+COPY pyvatti/ /app/pyvatti
 
-RUN poetry install --no-root && rm -rf $POETRY_CACHE_DIR
+WORKDIR /app/pyvatti/
 
-FROM python:3.12-slim-bullseye
-
-ARG TARGETARCH
-
-ENV VIRTUAL_ENV=/app/.venv \
-    PATH="/app/.venv/bin:$PATH"
-
-COPY --from=build ${VIRTUAL_ENV} ${VIRTUAL_ENV}
-
-COPY pyvatti /app/pyvatti
+RUN poetry install && rm -rf $POETRY_CACHE_DIR
 
 ADD pyvatti/helmvatti /opt/helmvatti
 
 ENV HELM_CHART_PATH=/opt/helmvatti
 
-WORKDIR /tmp 
+WORKDIR /tmp
 
 RUN apt-get update \
  && apt-get install -y curl \
@@ -38,6 +32,6 @@ RUN apt-get update \
  && rm /tmp/* \
  && apt-get -y clean
 
-WORKDIR /app/
+WORKDIR /app/pyvatti
 
-CMD ["uvicorn", "pyvatti.src.pyvatti.main:app", "--host", "0.0.0.0", "--port", "80"]
+CMD ["poetry", "run", "pyvatti"]

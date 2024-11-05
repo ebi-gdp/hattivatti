@@ -6,7 +6,7 @@ validate generated job configuration, like work bucket names.
 """
 
 import pathlib
-from typing import Optional
+from typing import Optional, Any
 
 import yaml
 from pydantic import (
@@ -93,15 +93,15 @@ class Secrets(BaseModel):
     globusClientSecret: str
     globusScopes: str
     towerToken: str
-    towerId: str
+    towerId: int
     keyHandlerToken: str
     keyHandlerPassword: str
     keyHandlerURL: HttpUrl
 
-    @field_serializer("keyHandlerURL")
+    @field_serializer("keyHandlerURL", "towerId")
     @classmethod
-    def url_to_string(cls, url: HttpUrl) -> str:
-        return str(url)
+    def to_string(cls, value: Any) -> str:
+        return str(value)
 
 
 class KeyHandlerDetails(BaseModel):

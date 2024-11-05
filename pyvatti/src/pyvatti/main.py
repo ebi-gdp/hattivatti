@@ -22,7 +22,7 @@ kafka_logger = logging.getLogger("kafka")
 kafka_logger.setLevel(logging.WARNING)
 
 
-def check_job_state(db: SqliteJobDatabase) -> None:
+def check_job_state(db: SqliteJobDatabase, settings: Settings) -> None:
     """Check the state of the job on the Seqera Platform and update active jobs in the database if the state has changed
 
     Created (resources requested) -> Deployed (running) -> Succeeded / Failed
@@ -36,7 +36,11 @@ def check_job_state(db: SqliteJobDatabase) -> None:
 
     for job in jobs:
         logger.info(f"Checking {job=} state")
-        job_state: Optional[States] = job.get_job_state()
+        job_state: Optional[States] = job.get_job_state(
+            namespace=settings.NAMESPACE,
+            tower_token=settings.TOWER_TOKEN,
+            tower_workspace=settings.TOWER_WORKSPACE,
+        )
         if job_state is not None:
             if job_state != job.state:
                 logger.info(
@@ -54,6 +58,7 @@ def kafka_consumer(
     topic: str,
     bootstrap_server_host: str,
     bootstrap_server_port: int,
+    settings: Settings,
 ) -> None:
     consumer = KafkaConsumer(
         topic,
@@ -67,14 +72,14 @@ def kafka_consumer(
         logger.info("Message read from kafka consumer")
         try:
             decoded_msg = json.loads(message.value.decode("utf-8"))
-            process_message(msg_value=decoded_msg, db=db)
+            process_message(msg_value=decoded_msg, db=db, settings=settings)
         except json.JSONDecodeError as e:
             logger.warning("Invalid JSON, skipping message")
             logger.warning(f"Message {message.value} caused exception: {e}")
             continue
 
 
-def process_message(msg_value: dict, db: SqliteJobDatabase) -> None:
+def process_message(msg_value: dict, db: SqliteJobDatabase, settings: Settings) -> None:
     """Each kafka message:
 
     - Gets validated by the pydantic model JobRequest
@@ -85,9 +90,9 @@ def process_message(msg_value: dict, db: SqliteJobDatabase) -> None:
     try:
         job_message: JobRequest = JobRequest(**msg_value)
         job: PolygenicScoreJob = PolygenicScoreJob(
-            intp_id=job_message.pipeline_param.id
+            intp_id=job_message.pipeline_param.id, settings=settings
         )
-        PolygenicScoreJob.create(job_model=job_message)
+        job.trigger("create", job_model=job_message)
         db.insert_job(job)
     except pydantic.ValidationError as e:
         logger.critical("Job request message validation failed, skipping job")
@@ -104,14 +109,31 @@ def main() -> None:
     db.create()
 
     # consume new kafka messages and insert them into the database in a background thread
-    consumer_thread: threading.Thread = threading.Thread(target=kafka_consumer)
+    if settings.KAFKA_BOOTSTRAP_SERVER is None:
+        raise ValueError("KAFKA_BOOTSTRAP_SERVER is mandatory but not set")
+
+    consumer_thread: threading.Thread = threading.Thread(
+        target=kafka_consumer,
+        daemon=True,
+        kwargs={
+            "db": db,
+            "topic": settings.KAFKA_CONSUMER_TOPIC,
+            "bootstrap_server_host": settings.KAFKA_BOOTSTRAP_SERVER.host,
+            "bootstrap_server_port": settings.KAFKA_BOOTSTRAP_SERVER.port,
+            "settings": settings,
+        },
+    )
     consumer_thread.start()
 
     # check for timed out jobs with schedule
-    schedule.every(1).minutes.do(db.timeout_jobs)
+    schedule.every(1).minutes.do(
+        db.timeout_jobs, timeout_seconds=settings.TIMEOUT_SECONDS
+    )
 
     # check if job states have changed and produce new messages
-    schedule.every(settings.POLL_INTERVAL).seconds.do(check_job_state)
+    schedule.every(settings.POLL_INTERVAL).seconds.do(
+        check_job_state, db=db, settings=settings
+    )
 
     # run scheduled tasks:
     while True:

@@ -24,7 +24,7 @@ secrets:
   globusClientSecret: clientsecret
   globusScopes: scopes
   towerToken: towertoken
-  towerId: "towerid"
+  towerId: 000000
   keyHandlerToken: keyhandlertoken
   keyHandlerPassword: keyhandlerpassword
   keyHandlerURL: https://example.com/key-handler/

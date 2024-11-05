@@ -8,7 +8,7 @@ import tempfile
 import yaml
 from google.cloud import storage
 
-from pyvatti.config import Settings
+from pyvatti.config import Settings, K8SNamespace
 from pyvatti.messagemodels import JobRequest
 from pyvatti.helm import render_template
 from pyvatti.jobstates import States
@@ -64,7 +64,7 @@ class GoogleResourceHandler(ResourceHandler):
         self._namespace = settings.NAMESPACE
         self._location = settings.GCP_LOCATION
         self._settings = settings
-        self._bucket_root = f"{str(settings.NAMESPACE)}-{self.intp_id}"
+        self._bucket_root = f"{settings.NAMESPACE.value}-{self.intp_id}"
         self._work_bucket = f"{self._bucket_root}-work"
         self._results_bucket = f"{self._bucket_root}-results"
         self._work_bucket_existed_on_create = False
@@ -83,9 +83,10 @@ class GoogleResourceHandler(ResourceHandler):
         - Render a helm chart
         - Run helm install
         """
-
+        logger.info("Creating buckets")
         self.make_buckets(job_model=job_model)
         try:
+            logger.info("Triggering helm install")
             helm_install(
                 job_model=job_model,
                 work_bucket_path=self._work_bucket,
@@ -232,7 +233,16 @@ def helm_install(
 
     with tempfile.NamedTemporaryFile(mode="wt") as temp_f:
         yaml.dump(template, temp_f)
-        cmd = f"helm install {release_name} {helm_chart_path} -n {str(namespace)} -f {temp_f.name}"
+        cmd = [
+            "helm",
+            "install",
+            release_name,
+            helm_chart_path,
+            "-n",
+            namespace.value,
+            "-f",
+            temp_f.name,
+        ]
         helm: subprocess.CompletedProcess = subprocess.run(cmd)
 
     if helm.returncode != 0:
@@ -242,8 +252,8 @@ def helm_install(
         logger.info("helm install OK")
 
 
-def helm_uninstall(release_name: str, namespace: str) -> None:
-    cmd = f"helm uninstall --namespace {namespace} {release_name.lower()}"
+def helm_uninstall(release_name: str, namespace: K8SNamespace) -> None:
+    cmd = ["helm", "uninstall", "--namespace", namespace.value, release_name.lower()]
     helm: subprocess.CompletedProcess = subprocess.run(cmd)
 
     if helm.returncode != 0:

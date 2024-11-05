@@ -27,7 +27,7 @@ class Settings(BaseSettings):
         "or deployed) jobs are transitioned to FAILED state",
     )
     TOWER_TOKEN: str = Field(description="Seqera platform token")
-    TOWER_WORKSPACE: str = Field(description="Seqera platform workspace ID")
+    TOWER_WORKSPACE: int = Field(description="Seqera platform workspace ID")
     GLOBUS_DOMAIN: str = Field(description="Globus collection domain")
     GLOBUS_CLIENT_ID: str = Field(description="Globus client ID")
     GLOBUS_CLIENT_SECRET: str = Field(description="Secret for Globus API")

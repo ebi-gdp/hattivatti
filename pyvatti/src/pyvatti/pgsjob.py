@@ -11,7 +11,7 @@ import httpx
 from kafka import KafkaProducer
 from transitions import Machine, EventData, MachineError
 
-from pyvatti.config import Settings
+from pyvatti.config import Settings, K8SNamespace
 from pyvatti.jobstates import States
 from pyvatti.messagemodels import JobRequest
 from pyvatti.notifymodels import SeqeraLog, BackendStatusMessage, BackendEvents
@@ -123,7 +123,7 @@ class PolygenicScoreJob(Machine):
     state_trigger_map: ClassVar[dict] = {
         States.FAILED: "error",
         States.SUCCEEDED: "succeed",
-        States.DEPLOYED: "deployed",
+        States.DEPLOYED: "deploy",
     }
     # map from states to events recognised by the backend
     state_event_map: ClassVar[dict] = {
@@ -180,7 +180,11 @@ class PolygenicScoreJob(Machine):
     def create_resources(self, event: EventData):
         """Create resources required to start the job"""
         logger.info(f"Creating resources for {self.intp_id}")
-        job_request: Optional[JobRequest] = event.kwargs.get("job_request", None)
+        job_request: Optional[JobRequest] = event.kwargs.get("job_model", None)
+
+        if job_request is None and isinstance(self.handler, GoogleResourceHandler):
+            raise ValueError("Can't create google resources without a job request")
+
         logger.info(f"Job message: {job_request}")
         self.handler.create_resources(job_request)
 
@@ -219,14 +223,14 @@ class PolygenicScoreJob(Machine):
             logger.info(f"{msg=} sent to pipeline-notify topic")
 
     def get_job_state(
-        self, tower_workspace: int, tower_token: str, namespace: str
+        self, tower_workspace: int, tower_token: str, namespace: K8SNamespace
     ) -> Optional[States]:
         """Get the state of a job by checking the Seqera Platform API
 
         Job state matches the state machine triggers"""
         params = {
             "workspaceId": tower_workspace,
-            "search": f"{namespace}-{self.intp_id}",
+            "search": f"{namespace.value}-{self.intp_id}",
             "max": 1,
         }
 
@@ -235,7 +239,14 @@ class PolygenicScoreJob(Machine):
                 f"{API_ROOT}/workflow", headers=get_headers(tower_token), params=params
             )
 
-        return SeqeraLog.from_response(response.json()).get_job_state()
+        log: Optional[SeqeraLog] = SeqeraLog.from_response(response.json())
+
+        if log is not None:
+            state: Optional[States] = log.get_job_state()
+        else:
+            state = None
+
+        return state
 
     def __repr__(self):
         return f"{self.__class__.__name__}(id={self.intp_id!r})"
