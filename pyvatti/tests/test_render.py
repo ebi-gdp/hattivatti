@@ -19,7 +19,7 @@ def test_render(message):
     """Test a values.yaml helm file is templated and rendered correctly"""
     settings = Settings(
         TOWER_TOKEN="test",
-        TOWER_WORKSPACE="test",
+        TOWER_WORKSPACE=000000,
         GLOBUS_DOMAIN="https://example.com",
         GLOBUS_CLIENT_ID="test",
         GLOBUS_CLIENT_SECRET="test",

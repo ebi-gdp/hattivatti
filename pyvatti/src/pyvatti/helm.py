@@ -85,6 +85,7 @@ class GlobflowParams(BaseModel):
     outdir: str
     config_application: str
     config_crypt4gh: str
+    secret_key: str
 
 
 class Secrets(BaseModel):

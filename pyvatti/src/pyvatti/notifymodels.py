@@ -54,7 +54,7 @@ class SeqeraLog(BaseModel):
     Parse the seqera status to a job machine state:
 
     >>> log.get_job_state()
-    <States.SUCCEEDED: 'succeeded'>
+    <States.SUCCEEDED: 'Succeeded'>
 
     A job can take time to start. During this time you'll get empty responses from the Seqera API:
 
@@ -103,23 +103,15 @@ class SeqeraLog(BaseModel):
         return state
 
 
-class BackendEvents(str, enum.Enum):
-    """Events recognised by the backend"""
-
-    STARTED = "started"
-    ERROR = "error"
-    COMPLETED = "completed"
-
-
 class BackendStatusMessage(BaseModel):
     """A message updating the backend about job state
 
     >>> from datetime import datetime
-    >>> d = {"run_name": "INTP123456", "utc_time": datetime(1999, 12, 31), "event": BackendEvents.COMPLETED}
+    >>> d = {"run_name": "INTP123456", "utc_time": datetime(1999, 12, 31), "event": States.DEPLOYED }
     >>> BackendStatusMessage(**d).model_dump_json()
-    '{"run_name":"INTP123456","utc_time":"1999-12-31T00:00:00","event":"completed"}'
+    '{"run_name":"INTP123456","utc_time":"1999-12-31T00:00:00","event":"Deployed"}'
     """
 
     run_name: str
     utc_time: PastDatetime
-    event: BackendEvents
+    event: States

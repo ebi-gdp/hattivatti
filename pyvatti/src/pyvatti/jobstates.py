@@ -2,8 +2,8 @@ import enum
 
 
 class States(str, enum.Enum):
-    REQUESTED = "requested"
-    CREATED = "created"
-    DEPLOYED = "deployed"
-    FAILED = "failed"
-    SUCCEEDED = "succeeded"
+    REQUESTED = "Requested"
+    CREATED = "Created"
+    DEPLOYED = "Deployed"
+    FAILED = "Failed"
+    SUCCEEDED = "Succeeded"

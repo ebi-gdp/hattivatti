@@ -14,7 +14,7 @@ from transitions import Machine, EventData, MachineError
 from pyvatti.config import Settings, K8SNamespace
 from pyvatti.jobstates import States
 from pyvatti.messagemodels import JobRequest
-from pyvatti.notifymodels import SeqeraLog, BackendStatusMessage, BackendEvents
+from pyvatti.notifymodels import SeqeraLog, BackendStatusMessage
 
 from pyvatti.resources import GoogleResourceHandler, DummyResourceHandler
 
@@ -35,7 +35,7 @@ class PolygenicScoreJob(Machine):
     On instantiation the default job state is requested:
 
     >>> job.state
-    <States.REQUESTED: 'requested'>
+    <States.REQUESTED: 'Requested'>
 
     Normally creating a resource requires some parameters from a message, but not in dry run mdoe:
 
@@ -56,7 +56,7 @@ class PolygenicScoreJob(Machine):
 
     >>> job.trigger("succeed") # doctest: +ELLIPSIS
     Sending state notification: States.SUCCEEDED
-    msg='{"run_name":"INT123456","utc_time":...,"event":"completed"}' prepared to send to pipeline-notify topic (PYTEST RUNNING)
+    msg='{"run_name":"INT123456","utc_time":...,"event":"Succeeded"}' prepared to send to pipeline-notify topic (PYTEST RUNNING)
     Deleting all resources: INT123456
     ...
 
@@ -72,7 +72,7 @@ class PolygenicScoreJob(Machine):
     >>> bad_job = PolygenicScoreJob("INT789123", dry_run=True)
     >>> bad_job.trigger("error")  # doctest: +ELLIPSIS
     Sending state notification: States.FAILED
-    msg='{"run_name":"INT789123","utc_time":"...","event":"error"}' prepared to send to pipeline-notify topic (PYTEST RUNNING)
+    msg='{"run_name":"INT789123","utc_time":"...","event":"Failed"}' prepared to send to pipeline-notify topic (PYTEST RUNNING)
     Deleting all resources: INT789123
     ...
 
@@ -125,12 +125,6 @@ class PolygenicScoreJob(Machine):
         States.SUCCEEDED: "succeed",
         States.DEPLOYED: "deploy",
     }
-    # map from states to events recognised by the backend
-    state_event_map: ClassVar[dict] = {
-        States.FAILED: BackendEvents.ERROR,
-        States.SUCCEEDED: BackendEvents.COMPLETED,
-        States.DEPLOYED: BackendEvents.STARTED,
-    }
 
     def __init__(
         self, intp_id: str, settings: Optional[Settings] = None, dry_run: bool = False
@@ -171,6 +165,7 @@ class PolygenicScoreJob(Machine):
 
     def handle_error(self, event):
         logger.warning(f"Exception raised for {self.intp_id}")
+        logger.warning(event.error)
         if isinstance(event.error, MachineError):
             logger.warning(f"Couldn't trigger error state for {self.intp_id}")
             raise event.error
@@ -197,9 +192,8 @@ class PolygenicScoreJob(Machine):
         """Notify the backend about the job state"""
         # bootstrap_server_host: str, bootstrap_server_port: int
         logger.info(f"Sending state notification: {self.state}")
-        event: str = self.state_event_map[self.state]
         msg: str = BackendStatusMessage(
-            run_name=self.intp_id, utc_time=datetime.now(), event=event
+            run_name=self.intp_id, utc_time=datetime.now(), event=self.state
         ).model_dump_json()
         if "pytest" in sys.modules:
             logger.info(
