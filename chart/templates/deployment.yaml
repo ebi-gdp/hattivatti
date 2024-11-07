@@ -1,38 +1,47 @@
 apiVersion: apps/v1
-kind: Deployment
+kind: StatefulSet
 metadata:
   name: {{ include "hattivatti.fullname" . }}
   labels:
     {{- include "hattivatti.labels" . | nindent 4 }}
 spec:
-  replicas: {{ .Values.replicaCount }}
   selector:
     matchLabels:
-      {{- include "hattivatti.selectorLabels" . | nindent 6 }}
+      app: {{ include "hattivatti.fullname" . }}
+  replicas: {{ .Values.replicas | default 1 }}
   template:
     metadata:
-      annotations:
-        cluster-autoscaler.kubernetes.io/safe-to-evict: "false"
       labels:
-        {{- include "hattivatti.labels" . | nindent 8 }}
-        {{- with .Values.podLabels }}
-        {{- toYaml . | nindent 8 }}
-        {{- end }}
+        app: {{ include "hattivatti.fullname" . }}
     spec:
       serviceAccountName: {{ include "hattivatti.serviceAccountName" . }}
-      containers:
-        - name: {{ .Chart.Name }}
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
-          ports:
-            - name: http
-              containerPort: {{ .Values.service.port }}
-              protocol: TCP
+      initContainers:
+        - name: init-litestream
+          image: litestream/litestream:0.3
+          imagePullPolicy: {{ .Values.image.pullPolicy | default "IfNotPresent" }}
+          args: ['restore', '-if-db-not-exists', '-if-replica-exists', '-o', {{ .Values.litestream.db_path }}, {{.Values.litestream.db}} ]
           resources:
               requests:
                 cpu: 500m
-                ephemeral-storage: 1Gi
                 memory: 512Mi
+          volumeMounts:
+            - name: data
+              mountPath: {{ dir .Values.litestream.db_path }}
+            - name: hattivatti-config-volume
+              mountPath: /etc/litestream.yml
+              subPath: dbs
+              readOnly: true
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy | default "Always" }}
+          resources:
+              requests:
+                cpu: 100m
+                memory: 128Mi
+          volumeMounts:
+            - name: data
+              mountPath: {{ dir .Values.litestream.db_path }}
           env:
           {{- range $envVarName, $secretKey := .Values.envMapping }}
           - name: {{ $envVarName }}
@@ -41,3 +50,31 @@ spec:
                 name: {{ $.Release.Name }}-secrets
                 key: {{ $envVarName }}
           {{- end }}
+          - name: SQLITE_DB_PATH
+            value: {{ required "db_path required" .Values.litestream.db_path }}
+        - name: litestream
+          image: litestream/litestream:0.3
+          args: ['replicate']
+          resources:
+              requests:
+                cpu: 100m
+                memory: 128Mi
+          volumeMounts:
+            - name: data
+              mountPath: {{ dir .Values.litestream.db_path }}
+            - name: hattivatti-config-volume
+              mountPath: /etc/litestream.yml
+              subPath: dbs
+              readOnly: true
+      volumes:
+        - name: hattivatti-config-volume
+          configMap:
+            name: hattivatti-configmap
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      resources:
+        requests:
+          storage: 100Mi

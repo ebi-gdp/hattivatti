@@ -1,0 +1,52 @@
+{
+  "workflows": [
+    {
+      "workflow": {
+        "id": null,
+        "ownerId": null,
+        "submit": "2024-07-10T15:34:44Z",
+        "start": "2024-07-10T15:34:44Z",
+        "complete": "2024-07-10T17:05:21Z",
+        "dateCreated": "2024-07-10T15:35:14Z",
+        "lastUpdated": "2024-07-10T17:05:24Z",
+        "runName": "intervene-dev-intp00000000044",
+        "sessionId": "6278c211-1d46-461c-87f6-15ddd32e7139",
+        "profile": "standard",
+        "workDir": null,
+        "commitId": "8bdf287d558a7abe1ef86e961337df71d7289d0d",
+        "userName": null,
+        "scriptId": "c5aaae71cd52cc5eaf6212fe9c0d3d3a",
+        "revision": "v2.0.0-alpha.5",
+        "commandLine": null,
+        "projectName": "gdp-public/pgsc_calc",
+        "scriptName": "main.nf",
+        "launchId": null,
+        "status": "SUCCEEDED",
+        "configFiles": null,
+        "params": null,
+        "configText": null,
+        "manifest": null,
+        "nextflow": null,
+        "stats": null,
+        "errorMessage": null,
+        "errorReport": null,
+        "deleted": null,
+        "peakLoadCpus": null,
+        "peakLoadTasks": null,
+        "peakLoadMemory": null,
+        "projectDir": "/.nextflow/assets/gdp-public/pgsc_calc",
+        "homeDir": null,
+        "container": null,
+        "repository": null,
+        "containerEngine": null,
+        "scriptFile": null,
+        "launchDir": "/",
+        "duration": 5437776,
+        "exitStatus": 0,
+        "resume": false,
+        "success": true
+      }
+    }
+  ],
+  "totalSize": 1
+}

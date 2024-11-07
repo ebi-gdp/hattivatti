@@ -7,15 +7,11 @@
 * upload results to a different secure area (i.e. a different bucket)
 * monitor and notify the backend about job status
 
-The main component is `pyvatti`, a FastAPI application that sets up a standard API for the job submission service to deploy across different environments (cloud or HPC). 
-
-`pyvatti` should be deployed on a Kubernetes cluster, and a Helm chart is available to simplify deployment.
-
-PGS Catalog Calculator jobs are installed to the local Kubernetes cluster as Job objects, but compute happens externally (Cloud Batch / SLURM).
+`hattivatti` should be deployed on a Kubernetes cluster, and a Helm chart is available to simplify deployment.
 
 ## Configuration and deployment
 
-Configuring the FastAPI application requires some environment variables to be set. See [pyvatti/src/pyvatti/config.py](https://github.com/ebi-gdp/hattivatti/blob/main/pyvatti/src/pyvatti/config.py) for a description.
+A python package called `pyvatti` runs the service. It requires some environment variables to be set. See [pyvatti/src/pyvatti/config.py](https://github.com/ebi-gdp/hattivatti/blob/main/pyvatti/src/pyvatti/config.py) for a description.
 
 Set these variables in the helm values file [chart/values-example.yaml](https://github.com/ebi-gdp/hattivatti/blob/main/chart/values-example.yaml).
 
@@ -51,9 +47,9 @@ sequenceDiagram
 
 The basic idea is that the python application:
 
-* builds a helm values file from the API call
+* builds a helm values file from a kafka message
 * creates compute resources, including:
   * buckets for doing work
   * installing a job to the local Kubernetes cluster (`helmvatti`) using the helm CLI
 * monitors and manages the resources for the lifetime of the job 
-
+* sends kafka messages when a workflow status changes

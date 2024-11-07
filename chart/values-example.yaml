@@ -2,14 +2,15 @@
 # This is a YAML-formatted file.
 # Declare variables to be passed into your templates.
 
-replicaCount: 1
+# maximum number of concurrent jobs in namespace
+maxJobs: 5
 
 image:
   repository: dockerhub.ebi.ac.uk/gdp-public/hattivatti
-  pullPolicy: Always
   # Overrides the image tag whose default is the chart appVersion.
   tag: "dev"
 
+# service account is important to manage buckets on a GCP project
 serviceAccount:
   # Specifies whether a service account should be created
   create: true
@@ -21,27 +22,36 @@ serviceAccount:
   # If not set and create is true, a name is generated using the fullname template
   name: "hattivatti"
 
-service:
-  type: ClusterIP
-  port: 80
+litestream:
+  db: gcs://bucketname/db
+  db_path: /var/lib/pyvatti/db
 
 secrets:
-  globusDomain: dummy
-  globusClientId: dummy
-  globusClientSecret: dummy
-  globusScopes: dummy
-  towerToken: dummy
-  towerId: dummy
-  notifyURL: dummy
-  notifyToken: dummy
+  globusDomain: "test"
+  globusClientId: "test"
+  globusClientSecret: "test"
+  globusScopes: "test"
+  towerToken: "test"
+  towerWorkspace: "test"
+  keyHandlerToken: "test"
+  keyHandlerPassword: "test"
+  keyHandlerUrl: "test"
+  gcpLocation: "test"
+  gcpProject: "test"
+  kafkaBootstrapServer: "kafka://kafka-cluster-kafka-0.kafka-cluster-kafka-brokers.kafka-dev.svc:9092"
+
 
 # map environment variable names to yaml secret keys
 envMapping:
   TOWER_TOKEN: "towerToken"
-  TOWER_WORKSPACE: "towerId"
+  TOWER_WORKSPACE: "towerWorkspace"
   GLOBUS_DOMAIN: "globusDomain"
   GLOBUS_CLIENT_ID: "globusClientId"
   GLOBUS_CLIENT_SECRET: "globusClientSecret"
   GLOBUS_SCOPES: "globusScopes"
-  NOTIFY_URL: "notifyURL"
-  NOTIFY_TOKEN: "notifyToken"
+  KEY_HANDLER_TOKEN: "keyHandlerToken"
+  KEY_HANDLER_PASSWORD: "keyHandlerPassword"
+  KEY_HANDLER_URL: "keyHandlerUrl"
+  GCP_PROJECT: "gcpProject"
+  GCP_LOCATION: "gcpLocation"
+  KAFKA_BOOTSTRAP_SERVER: "kafkaBootstrapServer"

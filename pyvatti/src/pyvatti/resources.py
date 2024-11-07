@@ -1,17 +1,17 @@
 """This module contains classes to handle the resources needed to run a job"""
 
 import abc
-import asyncio
 import logging
+import subprocess
 import tempfile
 
 import yaml
 from google.cloud import storage
 
-from .jobmodels import JobModel
-from .helm import render_template
-from .config import settings
-from .jobstates import States
+from pyvatti.config import Settings, K8SNamespace
+from pyvatti.messagemodels import JobRequest
+from pyvatti.helm import render_template
+from pyvatti.jobstates import States
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +22,7 @@ class ResourceHandler(abc.ABC):
         self.intp_id = intp_id
 
     @abc.abstractmethod
-    async def create_resources(self, job_model: JobModel):
+    def create_resources(self, job_model: JobRequest) -> None:
         """Create the compute resources needed to run a job
 
         For example:
@@ -32,7 +32,7 @@ class ResourceHandler(abc.ABC):
         ...
 
     @abc.abstractmethod
-    async def destroy_resources(self, state):
+    def destroy_resources(self, state: States) -> None:
         """Destroy the created resources
 
         Cleaning up properly is very important to keep sensitive data safe
@@ -42,65 +42,82 @@ class ResourceHandler(abc.ABC):
         ...
 
 
-class GoogleResourceHandler(ResourceHandler):
-    dry_run = False
+class DummyResourceHandler(ResourceHandler):
+    """A dummy resource handler that doesn't do anything for testing"""
 
-    def __init__(
-        self,
-        intp_id,
-        project_id="prj-ext-dev-intervene-413412",
-        location="europe-west2",
-    ):
+    def __init__(self, intp_id: str):
+        self.intp_id = intp_id
+
+    def create_resources(self, job_model: JobRequest) -> None:
+        pass
+
+    def destroy_resources(self, state: States) -> None:
+        pass
+
+
+class GoogleResourceHandler(ResourceHandler):
+    def __init__(self, intp_id: str, settings: Settings) -> None:
         super().__init__(intp_id=intp_id.lower())
-        self.project_id = project_id
-        self._bucket_root = f"{str(settings.NAMESPACE)}-{self.intp_id}"
+
+        self._project_id = settings.GCP_PROJECT
+        self._helm_chart_path = settings.HELM_CHART_PATH
+        self._namespace = settings.NAMESPACE
+        self._location = settings.GCP_LOCATION
+        self._settings = settings
+        self._bucket_root = f"{settings.NAMESPACE.value}-{self.intp_id}"
         self._work_bucket = f"{self._bucket_root}-work"
         self._results_bucket = f"{self._bucket_root}-results"
-        self._location = location
         self._work_bucket_existed_on_create = False
         self._results_bucket_existed_on_create = False
         self._helm_installed = False
 
-    async def create_resources(self, job_model: JobModel):
+    @property
+    def settings(self) -> Settings:
+        """A (read only) pydantic settings object"""
+        return self._settings
+
+    def create_resources(self, job_model: JobRequest) -> None:
         """Create some resources to run the job, including:
 
         - Create a bucket with lifecycle management
         - Render a helm chart
         - Run helm install
         """
-
+        logger.info("Creating buckets")
         self.make_buckets(job_model=job_model)
         try:
-            await helm_install(
+            logger.info("Triggering helm install")
+            helm_install(
                 job_model=job_model,
                 work_bucket_path=self._work_bucket,
                 results_bucket_path=self._results_bucket,
+                settings=self._settings,
             )
         except ValueError:
             self._helm_installed = False
         else:
             self._helm_installed = True
 
-    async def destroy_resources(self, state):
+    def destroy_resources(self, state: States) -> None:
         if self._helm_installed:
-            await helm_uninstall(self.intp_id)
+            helm_uninstall(self.intp_id, namespace=self._namespace)
 
         if state == States.FAILED:
             self._delete_buckets(results=True)
         else:
             self._delete_buckets(results=False)
 
-    def make_buckets(self, job_model: JobModel):
+    def make_buckets(self, job_model: JobRequest) -> None:
         """Create the buckets needed to run the job"""
         self._make_work_bucket(job_model)
         self._make_results_bucket(job_model)
 
-    def _make_work_bucket(self, job_model: JobModel):
+    def _make_work_bucket(self, _: JobRequest) -> None:
         """Unfortunately google cloud storage doesn't support async
 
         The work bucket has much stricter lifecycle policies than the results bucket
         """
-        client = storage.Client(project=self.project_id)
+        client = storage.Client(project=self._project_id)
         bucket: storage.Bucket = client.bucket(self._work_bucket)
 
         if bucket.exists():
@@ -111,22 +128,24 @@ class GoogleResourceHandler(ResourceHandler):
             self._work_bucket_existed_on_create = True
             raise FileExistsError
 
-        bucket.add_lifecycle_abort_incomplete_multipart_upload_rule(age=1)
+        bucket.add_lifecycle_abort_incomplete_multipart_upload_rule(**{"age": 1})
 
         # these file suffixes are guaranteed to contain sensitive data
         bucket.add_lifecycle_delete_rule(
-            age=1,
-            matches_suffix=[
-                ".vcf",
-                ".pgen",
-                ".pvar",
-                ".psam",
-                ".bim",
-                ".bed",
-                ".fam",
-                ".zst",
-                ".gz",
-            ],
+            **{
+                "age": 1,
+                "matches_suffix": [
+                    ".vcf",
+                    ".pgen",
+                    ".pvar",
+                    ".psam",
+                    ".bim",
+                    ".bed",
+                    ".fam",
+                    ".zst",
+                    ".gz",
+                ],
+            }
         )
 
         # this is so dumb!
@@ -142,9 +161,8 @@ class GoogleResourceHandler(ResourceHandler):
 
         bucket.create(location=self._location)
 
-    def _make_results_bucket(self, job_model: JobModel):
-        """Unfortunately the google storage library doesn't support async"""
-        client = storage.Client(project=self.project_id)
+    def _make_results_bucket(self, _: JobRequest) -> None:
+        client = storage.Client(project=self._project_id)
         bucket: storage.Bucket = client.bucket(self._results_bucket)
 
         if bucket.exists():
@@ -153,8 +171,8 @@ class GoogleResourceHandler(ResourceHandler):
             raise FileExistsError
 
         # results stay live for 7 days
-        bucket.add_lifecycle_delete_rule(age=7)
-        bucket.add_lifecycle_abort_incomplete_multipart_upload_rule(age=1)
+        bucket.add_lifecycle_delete_rule(**{"age": 7})
+        bucket.add_lifecycle_abort_incomplete_multipart_upload_rule(**{"age": 1})
 
         # don't soft delete, it's annoying
         soft_policy = storage.bucket.SoftDeletePolicy(bucket)
@@ -165,8 +183,7 @@ class GoogleResourceHandler(ResourceHandler):
 
         bucket.create(location=self._location)
 
-    def _delete_buckets(self, results=False):
-        # TODO: what if this is slow? it's not async!
+    def _delete_buckets(self, results: bool = False) -> None:
         if self._work_bucket_existed_on_create:
             # don't delete a bucket that existed before the job was created
             # otherwise a bad job will interfere with an existing good job
@@ -175,7 +192,7 @@ class GoogleResourceHandler(ResourceHandler):
             )
             return
 
-        client = storage.Client(project=self.project_id)
+        client = storage.Client(project=self._project_id)
         bucket = client.get_bucket(self._work_bucket)
 
         if not bucket.exists():
@@ -197,42 +214,50 @@ class GoogleResourceHandler(ResourceHandler):
             results_bucket.delete(force=True)
 
 
-async def helm_install(
-    job_model: JobModel, work_bucket_path: str, results_bucket_path: str
-):
+def helm_install(
+    job_model: JobRequest,
+    work_bucket_path: str,
+    results_bucket_path: str,
+    settings: Settings,
+) -> None:
+    helm_chart_path = settings.HELM_CHART_PATH
+    namespace = settings.NAMESPACE
+
     release_name: str = job_model.pipeline_param.id.lower()
     template = render_template(
         job_model,
         work_bucket_path=work_bucket_path,
         results_bucket_path=results_bucket_path,
+        settings=settings,
     )
 
     with tempfile.NamedTemporaryFile(mode="wt") as temp_f:
         yaml.dump(template, temp_f)
-        cmd = f"helm install {release_name} {settings.HELM_CHART_PATH} -n {str(settings.NAMESPACE)} -f {temp_f.name}"
-        proc = await asyncio.create_subprocess_shell(
-            cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-        )
-        stdout, stderr = await proc.communicate()
+        cmd = [
+            "helm",
+            "install",
+            release_name,
+            helm_chart_path,
+            "-n",
+            namespace.value,
+            "-f",
+            temp_f.name,
+        ]
+        helm: subprocess.CompletedProcess = subprocess.run(cmd)
 
-    if proc.returncode != 0:
-        logger.critical(f"{stderr.decode()}")
+    if helm.returncode != 0:
+        logger.critical(f"{helm.stderr}")
         raise ValueError("helm install failed")
     else:
         logger.info("helm install OK")
 
 
-async def helm_uninstall(release_name: str):
-    cmd = f"helm uninstall --namespace {str(settings.NAMESPACE)} {release_name.lower()}"
+def helm_uninstall(release_name: str, namespace: K8SNamespace) -> None:
+    cmd = ["helm", "uninstall", "--namespace", namespace.value, release_name.lower()]
+    helm: subprocess.CompletedProcess = subprocess.run(cmd)
 
-    proc = await asyncio.create_subprocess_shell(
-        cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-    )
-
-    stdout, stderr = await proc.communicate()
-
-    if proc.returncode != 0:
-        logger.critical(f"{stderr.decode()}")
+    if helm.returncode != 0:
+        logger.critical(f"{helm.stderr}")
         raise ValueError("helm uninstall failed")
     else:
-        logger.info(f"helm uninstall {release_name} OK")
+        logger.info("helm uninstall OK")

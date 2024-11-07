@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hattivatti-configmap
+  namespace: {{ .Release.Namespace }}
+data:
+  dbs: |
+    dbs:
+      - path: {{ required "litestream db path missing" .Values.litestream.db_path | quote }}
+        replicas:
+          - url: {{ required "litestream db URL missing" .Values.litestream.db | quote }}

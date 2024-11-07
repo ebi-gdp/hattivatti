@@ -1,108 +1,145 @@
-import asyncio
-import shutil
-from contextlib import asynccontextmanager
-from datetime import datetime, timezone
-
-from fastapi import FastAPI, BackgroundTasks, HTTPException
+import json
 import logging
-import shelve
+import threading
+import time
+from typing import Optional
 
-from starlette import status
+import pydantic
+import schedule
 
-from .job import PolygenicScoreJob, update_job_state
-from .jobmodels import JobModel
-from .config import settings
-from . import CLIENT, SHELF_LOCK, SHELF_PATH, TEMP_DIR
-from .monitor import API_ROOT, get_headers, SeqeraLog
+from pyvatti.config import Settings
+from pyvatti.db import SqliteJobDatabase
 
+from kafka import KafkaConsumer
+
+from pyvatti.pgsjob import PolygenicScoreJob  # type: ignore[attr-defined]
+from pyvatti.jobstates import States
+from pyvatti.messagemodels import JobRequest
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
+kafka_logger = logging.getLogger("kafka")
+kafka_logger.setLevel(logging.WARNING)
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    yield
+def check_job_state(db: SqliteJobDatabase, settings: Settings) -> None:
+    """Check the state of the job on the Seqera Platform and update active jobs in the database if the state has changed
 
-    async with SHELF_LOCK:
-        with shelve.open(SHELF_PATH) as db:
-            for job_id, job_instance in db.items():
-                logger.warning(f"{job_id} active while shutting down, erroring")
-                await update_job_state(workflow_id=job_id, trigger="error")
+    Created (resources requested) -> Deployed (running) -> Succeeded / Failed
+    """
+    # active jobs: haven't succeeded or failed
+    jobs: Optional[list[PolygenicScoreJob]] = db.get_active_jobs()
+    if jobs is not None:
+        logger.info(f"{len(jobs)} active jobs found")
+    else:
+        return
 
-    shutil.rmtree(TEMP_DIR)
-    logger.info(f"Cleaned up {SHELF_PATH}")
-
-    # close the connection pool
-    await CLIENT.aclose()
-    logger.info("Closed httpx thread pool")
-
-
-app = FastAPI(lifespan=lifespan)
-
-
-async def launch_job(job_model: JobModel):
-    """Background task to create a job, trigger create, and store the job on the shelf"""
-    id: str = job_model.pipeline_param.id
-    job_instance: PolygenicScoreJob = PolygenicScoreJob(intp_id=id)
-
-    await job_instance.create(job_model=job_model, client=CLIENT)
-
-    async with SHELF_LOCK:
-        with shelve.open(SHELF_PATH) as db:
-            db[id] = job_instance
-
-
-@app.post("/launch", status_code=status.HTTP_201_CREATED)
-async def launch(job: JobModel, background_tasks: BackgroundTasks):
-    with shelve.open(SHELF_PATH) as db:
-        if job.pipeline_param.id in db:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=f"Job {job.pipeline_param.id} already exists",
-            )
-
-    background_tasks.add_task(launch_job, job)
-    background_tasks.add_task(monitor_job, job.pipeline_param.id)
-    return {"id": job.pipeline_param.id}
-
-
-async def monitor_job(workflow_id):
-    """Monitor jobs using the Seqera API and update internal job state
-
-    Updating job states will trigger notifications and the destruction of resources"""
-    params = {
-        "workspaceId": settings.TOWER_WORKSPACE,
-        "search": f"{settings.NAMESPACE}-{workflow_id}",
-    }
-    log = None
-    time_started = datetime.now(timezone.utc)
-
-    while True:
-        await asyncio.sleep(settings.POLL_INTERVAL)
-
-        time_s: int = (datetime.now(timezone.utc) - time_started).seconds
-        if time_s > settings.TIMEOUT_SECONDS:
-            logger.warning(f"Timeout exceeded for {workflow_id}")
-            await update_job_state(workflow_id=workflow_id, trigger="error")
-            break
-
-        logger.info(f"Polling API {workflow_id}")
-        response = await CLIENT.get(
-            f"{API_ROOT}/workflow", headers=get_headers(), params=params
+    for job in jobs:
+        logger.info(f"Checking {job=} state")
+        job_state: Optional[States] = job.get_job_state(
+            namespace=settings.NAMESPACE,
+            tower_token=settings.TOWER_TOKEN,
+            tower_workspace=settings.TOWER_WORKSPACE,
         )
-        new_log: SeqeraLog = SeqeraLog.from_response(response)
+        if job_state is not None:
+            if job_state != job.state:
+                logger.info(
+                    f"Job state change detected: From {job_state} to {job.state}"
+                )
+                # get the trigger from the destination state enum
+                # e.g. "deploy" -> "succeed" / "error"
+                trigger: str = PolygenicScoreJob.state_trigger_map[job_state]
+                job.trigger(trigger)
+                db.update_job(job)
 
-        if new_log is None:
-            logger.info(f"No log found yet for {workflow_id}")
+
+def kafka_consumer(
+    db: SqliteJobDatabase,
+    topic: str,
+    bootstrap_server_host: str,
+    bootstrap_server_port: int,
+    settings: Settings,
+) -> None:
+    consumer = KafkaConsumer(
+        topic,
+        bootstrap_servers=f"{bootstrap_server_host}:{bootstrap_server_port}",
+        enable_auto_commit=False,
+    )
+    logger.info("Listening for kafka messages")
+
+    # TODO: want to avoid partially processing a commit if the thread is terminated
+    for message in consumer:
+        logger.info("Message read from kafka consumer")
+        try:
+            decoded_msg = json.loads(message.value.decode("utf-8"))
+            process_message(msg_value=decoded_msg, db=db, settings=settings)
+        except json.JSONDecodeError as e:
+            logger.warning("Invalid JSON, skipping message")
+            logger.warning(f"Message {message.value} caused exception: {e}")
             continue
 
-        if log != new_log:
-            logger.info("Job state update detected")
-            log = new_log
-            job_state = log.get_job_state()
-            await update_job_state(trigger=job_state, workflow_id=workflow_id)
-            if job_state == "error" or job_state == "succeed":
-                break
 
-    logger.info(f"Monitoring stopped for {workflow_id}")
+def process_message(msg_value: dict, db: SqliteJobDatabase, settings: Settings) -> None:
+    """Each kafka message:
+
+    - Gets validated by the pydantic model JobRequest
+    - Instantiate a PolygenicScoreJob object
+    - Trigger the "create" state where compute resources are provisioned
+    - Adds the job object to the database
+    """
+    try:
+        job_message: JobRequest = JobRequest(**msg_value)
+        job: PolygenicScoreJob = PolygenicScoreJob(
+            intp_id=job_message.pipeline_param.id, settings=settings
+        )
+        job.trigger("create", job_model=job_message)
+        db.insert_job(job)
+    except pydantic.ValidationError as e:
+        logger.critical("Job request message validation failed, skipping job")
+        logger.critical(f"{e}")
+    except Exception as e:
+        logger.critical(f"Something went wildly wrong, skipping job: {e}")
+
+
+def main() -> None:
+    # create the job database if it does not exist (if it exists, nothing happens here)
+    settings = Settings()
+    db = SqliteJobDatabase(str(settings.SQLITE_DB_PATH))
+
+    db.create()
+
+    # consume new kafka messages and insert them into the database in a background thread
+    if settings.KAFKA_BOOTSTRAP_SERVER is None:
+        raise ValueError("KAFKA_BOOTSTRAP_SERVER is mandatory but not set")
+
+    consumer_thread: threading.Thread = threading.Thread(
+        target=kafka_consumer,
+        daemon=True,
+        kwargs={
+            "db": db,
+            "topic": settings.KAFKA_CONSUMER_TOPIC,
+            "bootstrap_server_host": settings.KAFKA_BOOTSTRAP_SERVER.host,
+            "bootstrap_server_port": settings.KAFKA_BOOTSTRAP_SERVER.port,
+            "settings": settings,
+        },
+    )
+    consumer_thread.start()
+
+    # check for timed out jobs with schedule
+    schedule.every(1).minutes.do(
+        db.timeout_jobs, timeout_seconds=settings.TIMEOUT_SECONDS
+    )
+
+    # check if job states have changed and produce new messages
+    schedule.every(settings.POLL_INTERVAL).seconds.do(
+        check_job_state, db=db, settings=settings
+    )
+
+    # run scheduled tasks:
+    while True:
+        schedule.run_pending()
+        time.sleep(1)
+
+
+if __name__ == "__main__":
+    main()

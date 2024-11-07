@@ -1,10 +1,47 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{ .Release.Name }}-transferconfig
+  name: {{ .Release.Name }}-transfer-config
 data:
-  input.json: {{ .Values.globflowInput | quote }}
+  input.json: {{ required ".Values.globflowInput is required" .Values.globflowInput | toJson | quote }}
+  key.json: {{ required ".Values.keyHandlerSecret is required" .Values.keyHandlerSecret | toJson | quote }}
   params.yml: |
 {{- range $key, $value := .Values.globflowParams }}
     {{ $key }}: {{ $value }}
 {{- end }}
+  nxf.config: |
+    workDir = {{ required ".Values.nxfParams.workBucketPath is required" .Values.nxfParams.workBucketPath | quote }}
+
+    process {
+      executor = 'google-batch'
+      maxRetries = 1
+    }
+
+    google {
+      project = {{ required ".Values.nxfParams.gcpProject is required" .Values.nxfParams.gcpProject | quote }}
+      location = {{ required ".Values.nxfParams.location is required" .Values.nxfParams.location | quote }}
+      batch {
+        spot = {{ .Values.nxfParams.spot | default true | quote }}
+      }
+    }
+
+    wave {
+      enabled = {{ .Values.nxfParams.wave | default true | quote }}
+    }
+
+    fusion {
+      enabled =  {{ .Values.nxfParams.fusion | default true | quote }}
+    }
+
+    tower {
+      accessToken = {{ required ".Values.secrets.towerToken is required" .Values.secrets.towerToken | quote }}
+      workspaceId = {{ required ".Values.secrets.towerId is required" .Values.secrets.towerId | quote }}
+      enabled = {{ .Values.nxfParams.tower | default true | quote }}
+    }
+  scm: |
+    providers {
+      ebi {
+        server = 'https://gitlab.ebi.ac.uk'
+        platform = 'gitlab'
+      }
+    }

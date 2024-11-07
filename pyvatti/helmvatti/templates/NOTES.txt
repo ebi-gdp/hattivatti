@@ -1,9 +1,0 @@
-Thank you for installing {{ .Chart.Name }} in {{ .Release.Namespace }}.
-
-Your release is named {{ .Release.Name }}.
-
-Don't forget to run:
-
-$ helm uninstall {{ .Release.Name }} 
-
-When the job is finished to clean up the ConfigMap, Pods, and Job
