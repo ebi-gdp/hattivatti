@@ -25,8 +25,7 @@ $ helm install hattivatti . -n <namespace> -f <path_to_values.yaml>
 
 ```mermaid
 sequenceDiagram
-    Backend->>pyvatti: Launch a job please
-    pyvatti->>Backend: Done
+    Backend->>pyvatti: Consume Kafka job request
     create participant Cloud Storage
     pyvatti->>Cloud Storage: Make buckets
     create participant Nextflow Job
@@ -38,7 +37,7 @@ sequenceDiagram
     Note over Seqera,pyvatti: Until error or success
     end
     Seqera->>pyvatti:Job status: success
-    pyvatti->>Backend:Notify
+    pyvatti->>Backend:Produce Kafka notify msg
     destroy Nextflow Job
     pyvatti->>Nextflow Job:helm uninstall
     destroy Cloud Storage
