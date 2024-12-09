@@ -3,7 +3,7 @@ kind: Job
 metadata:
   name: {{ .Release.Name }}
 spec:
-  ttlSecondsAfterFinished: {{ .Values.ttlSecondsAfterFinished | default 3600 }}
+  ttlSecondsAfterFinished: {{ .Values.ttlSecondsAfterFinished | default 172800 }}
   backoffLimit: {{ .Values.backoffLimit | default 0 }}
   template:
     metadata:
