@@ -61,6 +61,9 @@ spec:
             - "/opt/nxf/params.yml"
             - "-c"
             - "/opt/nxf/nxf.config"
+            - "--max_cpus 2"
+            - "--max_memory 64.GB"
+            - "--max_time 24.h"
           env:
             - name: NXF_SCM_FILE
               value: /opt/nxf/scm
