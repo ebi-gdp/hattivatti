@@ -2,7 +2,7 @@
 # This is a YAML-formatted file.
 # Declare variables to be passed into your templates.
 
-baseImage: "docker.io/nextflow/nextflow"
+baseImage: "dockerhub.ebi.ac.uk/gdp-public/hattivatti/nextflow"
 dockerTag: "24.10.0"
 pullPolicy: "IfNotPresent"
 
