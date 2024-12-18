@@ -123,10 +123,20 @@ class SqliteJobDatabase(JobDatabase):
 
     >>> with sqlite3.connect(db.path) as conn:
     ...     cursor = conn.cursor()
-    ...     sql = "UPDATE jobs SET created_at = ? WHERE id = ?"
-    ...     _ = cursor.execute(sql, (str(yesterday), updated_job.intp_id))
+    ...     sql = "UPDATE jobs SET state = ?, created_at = ? WHERE id = ?"
+    ...     _ = cursor.execute(sql, ('Created', str(yesterday), updated_job.intp_id))
+
+    Deployed jobs time out by a separate Nextflow mechanism.
+
+    Created jobs can time out because that means they've never started sending logs back.
 
     Trigger the error state for any timed out jobs:
+
+    >>> updated_job = db.load_job(job.intp_id)
+    >>> updated_job.state
+    <States.DEPLOYED: 'Deployed'>
+    >>> db.get_active_jobs()
+    [PolygenicScoreJob(id='test')]
 
     >>> db.timeout_jobs(timeout_seconds=60)
 
@@ -174,10 +184,13 @@ class SqliteJobDatabase(JobDatabase):
             conn.executescript(schema)
 
     def timeout_jobs(self, timeout_seconds: int) -> None:
-        """Trigger the error state in any jobs that exceed a timeout limit"""
+        """Trigger the error state in any jobs that exceed a timeout limit
+
+        If a job has deployed successfully, it will timeout by itself because of --max_time capping processes
+        """
         sql = """
         SELECT id FROM jobs
-        WHERE state NOT IN ('Failed', 'Succeeded')
+        WHERE state NOT IN ('Failed', 'Deployed', 'Succeeded')
             AND created_at <= datetime('now', ? || ' seconds');
         """
         logger.info("Checking for timed out jobs")

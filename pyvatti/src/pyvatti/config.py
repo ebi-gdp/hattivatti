@@ -22,9 +22,9 @@ class Settings(BaseSettings):
     )
     TIMEOUT_SECONDS: int = Field(
         gt=0,
-        default=60 * 60 * 24,
-        description="Number of seconds before active (requested, created, "
-        "or deployed) jobs are transitioned to FAILED state",
+        default=60 * 60,
+        description="Number of seconds before active (requested or created) "
+        "jobs are transitioned to FAILED state",
     )
     TOWER_TOKEN: str = Field(description="Seqera platform token")
     TOWER_WORKSPACE: int = Field(description="Seqera platform workspace ID")
