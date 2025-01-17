@@ -143,6 +143,7 @@ class SqliteJobDatabase(JobDatabase):
     Check for active jobs:
 
     >>> db.get_active_jobs()
+    []
 
     (there are none!)
 
@@ -243,7 +244,7 @@ class SqliteJobDatabase(JobDatabase):
             pickled_job = result[0]
             return pickle.loads(pickled_job)
 
-    def get_active_jobs(self) -> Optional[list[PolygenicScoreJob]]:
+    def get_active_jobs(self) -> list[PolygenicScoreJob]:
         sql = """
         SELECT id FROM jobs WHERE state NOT IN ('Failed', 'Succeeded')
         """
@@ -255,8 +256,8 @@ class SqliteJobDatabase(JobDatabase):
 
         if result:
             ids: list[str] = [x[0] for x in result]
-            jobs: Optional[list[PolygenicScoreJob]] = [self.load_job(x) for x in ids]
+            jobs: list[PolygenicScoreJob] = [self.load_job(x) for x in ids]
         else:
-            jobs = None
+            jobs = []
 
         return jobs

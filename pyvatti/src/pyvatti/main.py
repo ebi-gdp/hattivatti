@@ -28,8 +28,8 @@ def check_job_state(db: SqliteJobDatabase, settings: Settings) -> None:
     Created (resources requested) -> Deployed (running) -> Succeeded / Failed
     """
     # active jobs: haven't succeeded or failed
-    jobs: Optional[list[PolygenicScoreJob]] = db.get_active_jobs()
-    if jobs is not None:
+    jobs: list[PolygenicScoreJob] = db.get_active_jobs()
+    if jobs:
         logger.info(f"{len(jobs)} active jobs found")
     else:
         return
@@ -67,16 +67,20 @@ def kafka_consumer(
     )
     logger.info("Listening for kafka messages")
 
-    # TODO: want to avoid partially processing a commit if the thread is terminated
     for message in consumer:
         logger.info("Message read from kafka consumer")
+
+        while len(db.get_active_jobs()) > settings.MAX_CONCURRENT_JOBS:
+            time.sleep(1)
+
         try:
             decoded_msg = json.loads(message.value.decode("utf-8"))
             process_message(msg_value=decoded_msg, db=db, settings=settings)
         except json.JSONDecodeError as e:
             logger.warning("Invalid JSON, skipping message")
             logger.warning(f"Message {message.value} caused exception: {e}")
-            continue
+        finally:
+            consumer.commit()
 
 
 def process_message(msg_value: dict, db: SqliteJobDatabase, settings: Settings) -> None:

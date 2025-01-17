@@ -5,7 +5,14 @@ import sys
 from tempfile import NamedTemporaryFile
 from typing import Optional, Self
 
-from pydantic import Field, DirectoryPath, KafkaDsn, model_validator, HttpUrl
+from pydantic import (
+    Field,
+    DirectoryPath,
+    KafkaDsn,
+    model_validator,
+    HttpUrl,
+    PositiveInt,
+)
 from pydantic_settings import BaseSettings
 
 
@@ -62,6 +69,10 @@ class Settings(BaseSettings):
     )
     KEY_HANDLER_URL: Optional[HttpUrl] = Field(
         description="URL used to contact the key handler service"
+    )
+    MAX_CONCURRENT_JOBS: PositiveInt = Field(
+        description="Maximum number of concurrent jobs to run on GKE cluster.",
+        default=10,
     )
 
     @model_validator(mode="after")
