@@ -72,11 +72,13 @@ class PolygenicScoreJob(Machine):
     >>> bad_job = PolygenicScoreJob("INT789123", dry_run=True)
     >>> bad_job.trigger("error")  # doctest: +ELLIPSIS
     Sending state notification: States.FAILED
-    msg='{"run_name":"INT789123","utc_time":"...","event":"Failed"}' prepared to send to pipeline-notify topic (PYTEST RUNNING)
+    msg='{"run_name":"INT789123","utc_time":"...","event":"Failed","trace_name":null,"trace_exit":null}' prepared to send to pipeline-notify topic (PYTEST RUNNING)
     Deleting all resources: INT789123
     ...
 
     It's important to clean up and delete resources in the event of a failure.
+
+    trace_name and trace_exit are null because this information is set by a scheduled function that triggers the error state (check_job_state)
     """
 
     # when callback methods are invoked _after_ a transition, state = destination
@@ -127,7 +129,12 @@ class PolygenicScoreJob(Machine):
     }
 
     def __init__(
-        self, intp_id: str, settings: Optional[Settings] = None, dry_run: bool = False
+        self,
+        intp_id: str,
+        settings: Optional[Settings] = None,
+        dry_run: bool = False,
+        trace_name: Optional[str] = None,
+        trace_exit: Optional[int] = None,
     ):
         states = [
             # a dummy initial state: /launch got POSTed
@@ -152,6 +159,10 @@ class PolygenicScoreJob(Machine):
             self.handler = DummyResourceHandler(intp_id=intp_id)
         else:
             self.handler = GoogleResourceHandler(intp_id=intp_id, settings=settings)
+
+        # read from seqera API when the failed state happens
+        self.trace_name = trace_name  # the name of the failing process
+        self.trace_exit = trace_exit  # exit code of failing process
 
         # set up the state machine
         super().__init__(
@@ -193,7 +204,11 @@ class PolygenicScoreJob(Machine):
         # bootstrap_server_host: str, bootstrap_server_port: int
         logger.info(f"Sending state notification: {self.state}")
         msg: str = BackendStatusMessage(
-            run_name=self.intp_id, utc_time=datetime.now(), event=self.state
+            run_name=self.intp_id,
+            utc_time=datetime.now(),
+            event=self.state,
+            trace_name=self.trace_name,
+            trace_exit=self.trace_exit,
         ).model_dump_json()
         if "pytest" in sys.modules:
             logger.info(
@@ -215,6 +230,23 @@ class PolygenicScoreJob(Machine):
             producer.send(producer_topic, msg)
             producer.flush()
             logger.info(f"{msg=} sent to pipeline-notify topic")
+
+    def get_seqera_log(
+        self, tower_workspace: int, tower_token: str, namespace: K8SNamespace
+    ) -> Optional[SeqeraLog]:
+        """Get a job log from the Seqera Platform API"""
+        params = {
+            "workspaceId": tower_workspace,
+            "search": f"{namespace.value}-{self.intp_id}",
+            "max": 1,
+        }
+
+        with httpx.Client() as client:
+            response = client.get(
+                f"{API_ROOT}/workflow", headers=get_headers(tower_token), params=params
+            )
+
+        return SeqeraLog.from_response(response.json())
 
     def get_job_state(
         self, tower_workspace: int, tower_token: str, namespace: K8SNamespace

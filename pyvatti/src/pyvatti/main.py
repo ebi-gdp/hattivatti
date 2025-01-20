@@ -12,6 +12,7 @@ from pyvatti.db import SqliteJobDatabase
 
 from kafka import KafkaConsumer, errors
 
+from pyvatti.notifymodels import SeqeraLog
 from pyvatti.pgsjob import PolygenicScoreJob  # type: ignore[attr-defined]
 from pyvatti.jobstates import States
 from pyvatti.messagemodels import JobRequest
@@ -35,18 +36,28 @@ def check_job_state(db: SqliteJobDatabase, settings: Settings) -> None:
     else:
         return
 
+    seqera_api = {
+        "namespace": settings.NAMESPACE,
+        "tower_token": settings.TOWER_TOKEN,
+        "tower_workspace": settings.TOWER_WORKSPACE,
+    }
+
     for job in jobs:
         logger.info(f"Checking {job=} state")
-        job_state: Optional[States] = job.get_job_state(
-            namespace=settings.NAMESPACE,
-            tower_token=settings.TOWER_TOKEN,
-            tower_workspace=settings.TOWER_WORKSPACE,
-        )
+        job_state: Optional[States] = job.get_job_state(**seqera_api)
+
         if job_state is not None:
             if job_state != job.state:
                 logger.info(
                     f"Job state change detected: From {job_state} to {job.state}"
                 )
+
+                if job_state == States.FAILED:
+                    log: SeqeraLog = job.get_seqera_log(**seqera_api)
+                    # (there's definitely an API response, job_state was OK!)
+                    job.trace_exit = log.exitStatus
+                    job.trace_name = log.errorReport
+
                 # get the trigger from the destination state enum
                 # e.g. "deploy" -> "succeed" / "error"
                 trigger: str = PolygenicScoreJob.state_trigger_map[job_state]
