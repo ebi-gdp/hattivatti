@@ -10,7 +10,7 @@ import schedule
 from pyvatti.config import Settings
 from pyvatti.db import SqliteJobDatabase
 
-from kafka import KafkaConsumer
+from kafka import KafkaConsumer, errors
 
 from pyvatti.pgsjob import PolygenicScoreJob  # type: ignore[attr-defined]
 from pyvatti.jobstates import States
@@ -20,6 +20,7 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 kafka_logger = logging.getLogger("kafka")
 kafka_logger.setLevel(logging.WARNING)
+KAFKA_NOT_OK = threading.Event()
 
 
 def check_job_state(db: SqliteJobDatabase, settings: Settings) -> None:
@@ -60,27 +61,31 @@ def kafka_consumer(
     bootstrap_server_port: int,
     settings: Settings,
 ) -> None:
-    consumer = KafkaConsumer(
-        topic,
-        bootstrap_servers=f"{bootstrap_server_host}:{bootstrap_server_port}",
-        enable_auto_commit=False,
-    )
-    logger.info("Listening for kafka messages")
+    try:
+        consumer = KafkaConsumer(
+            topic,
+            bootstrap_servers=f"{bootstrap_server_host}:{bootstrap_server_port}",
+            enable_auto_commit=False,
+        )
+        logger.info("Listening for kafka messages")
 
-    for message in consumer:
-        logger.info("Message read from kafka consumer")
+        for message in consumer:
+            logger.info("Message read from kafka consumer")
 
-        while len(db.get_active_jobs()) > settings.MAX_CONCURRENT_JOBS:
-            time.sleep(1)
+            while len(db.get_active_jobs()) > settings.MAX_CONCURRENT_JOBS:
+                time.sleep(1)
 
-        try:
-            decoded_msg = json.loads(message.value.decode("utf-8"))
-            process_message(msg_value=decoded_msg, db=db, settings=settings)
-        except json.JSONDecodeError as e:
-            logger.warning("Invalid JSON, skipping message")
-            logger.warning(f"Message {message.value} caused exception: {e}")
-        finally:
-            consumer.commit()
+            try:
+                decoded_msg = json.loads(message.value.decode("utf-8"))
+                process_message(msg_value=decoded_msg, db=db, settings=settings)
+            except json.JSONDecodeError as e:
+                logger.warning("Invalid JSON, skipping message")
+                logger.warning(f"Message {message.value} caused exception: {e}")
+            finally:
+                consumer.commit()
+    except errors.KafkaError as e:
+        logger.critical(f"Kafka error: {e}")
+        KAFKA_NOT_OK.set()
 
 
 def process_message(msg_value: dict, db: SqliteJobDatabase, settings: Settings) -> None:
@@ -142,6 +147,10 @@ def main() -> None:
     # run scheduled tasks:
     while True:
         schedule.run_pending()
+
+        if KAFKA_NOT_OK.is_set():
+            raise SystemExit("Kafka error that can't be fixed")
+
         time.sleep(1)
 
 
