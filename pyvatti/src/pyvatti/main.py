@@ -66,6 +66,7 @@ def kafka_consumer(
             topic,
             bootstrap_servers=f"{bootstrap_server_host}:{bootstrap_server_port}",
             enable_auto_commit=False,
+            group_id="hattivatti",
         )
         logger.info("Listening for kafka messages")
 
