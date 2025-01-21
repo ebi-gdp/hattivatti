@@ -160,7 +160,7 @@ def main() -> None:
 
     schedule.every(1).minutes.do(
         bucket_clean_up,
-        project_id=settings.PROJECT_ID,
+        project_id=settings.GCP_PROJECT,
         bucket_prefix=f"{settings.NAMESPACE.value}-intp",
     )
 
@@ -185,6 +185,8 @@ def bucket_clean_up(project_id: str, bucket_prefix: str) -> None:
 
     If anything goes wrong with these approaches this is an additional deletion step
     """
+    logger.info("Checking for expired buckets")
+
     TWO_WEEKS_AGO = datetime.now(timezone.utc) - timedelta(days=14)
     storage_client = storage.Client(project=project_id)
     buckets = [
