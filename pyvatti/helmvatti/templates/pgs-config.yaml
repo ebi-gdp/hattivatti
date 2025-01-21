@@ -25,7 +25,7 @@ data:
       withName: 'COMBINE_SCOREFILES' {
         cpus = 1
         memory = { check_max( 8.GB * task.attempt, 'memory') }
-        time = { check_max( 8.hour * task.attempt, 'time') }
+        time = { check_max( 24.hour * task.attempt, 'time') }
       }
 
       withName: 'DUMPSOFTWAREVERSIONS' {
