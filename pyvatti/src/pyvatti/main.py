@@ -2,10 +2,12 @@ import json
 import logging
 import threading
 import time
+from datetime import datetime, timezone, timedelta
 from typing import Optional
 
 import pydantic
 import schedule
+from google.cloud import storage
 
 from pyvatti.config import Settings
 from pyvatti.db import SqliteJobDatabase
@@ -156,6 +158,12 @@ def main() -> None:
         check_job_state, db=db, settings=settings
     )
 
+    schedule.every(1).minutes.do(
+        bucket_clean_up,
+        project_id=settings.PROJECT_ID,
+        bucket_prefix=f"{settings.NAMESPACE.value}-intp",
+    )
+
     # run scheduled tasks:
     while True:
         schedule.run_pending()
@@ -164,6 +172,33 @@ def main() -> None:
             raise SystemExit("Kafka error that can't be fixed")
 
         time.sleep(1)
+
+
+def bucket_clean_up(project_id: str, bucket_prefix: str) -> None:
+    """Deletes buckets older than two weeks with a specific prefix.
+
+    This scheduled function is meant to clean empty results buckets,
+    but it's helpful to make sure work buckets are empty and deleted, because:
+
+    - Objects always have a lifecycle policy and delete themselves
+    - When a job enters a failed state buckets should get deleted
+
+    If anything goes wrong with these approaches this is an additional deletion step
+    """
+    TWO_WEEKS_AGO = datetime.now(timezone.utc) - timedelta(days=14)
+    storage_client = storage.Client(project=project_id)
+    buckets = [
+        x
+        for x in storage_client.list_buckets()
+        if x.name.startswith(bucket_prefix) and x.time_created < TWO_WEEKS_AGO
+    ]
+
+    for bucket in buckets:
+        try:
+            bucket.delete(force=True)
+            logger.info(f"Deleted expired bucket: {bucket.name}")
+        except Exception as e:
+            logger.critical(f"Error deleting bucket {bucket.name}: {e}")
 
 
 if __name__ == "__main__":
