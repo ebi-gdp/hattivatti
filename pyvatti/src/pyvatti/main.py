@@ -86,7 +86,7 @@ def kafka_consumer(
         for message in consumer:
             logger.info("Message read from kafka consumer")
 
-            while len(db.get_active_jobs()) > settings.MAX_CONCURRENT_JOBS:
+            while len(db.get_active_jobs()) >= settings.MAX_CONCURRENT_JOBS:
                 time.sleep(1)
 
             try:
