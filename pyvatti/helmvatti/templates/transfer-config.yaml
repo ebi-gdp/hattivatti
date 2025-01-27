@@ -21,16 +21,16 @@ data:
       project = {{ required ".Values.nxfParams.gcpProject is required" .Values.nxfParams.gcpProject | quote }}
       location = {{ required ".Values.nxfParams.location is required" .Values.nxfParams.location | quote }}
       batch {
-        spot = {{ .Values.nxfParams.spot | default true | quote }}
+        spot = {{ .Values.nxfParams.spot | default false }}
       }
     }
 
     wave {
-      enabled = {{ .Values.nxfParams.wave | default true | quote }}
+      enabled = {{ .Values.nxfParams.wave | default true }}
     }
 
     fusion {
-      enabled =  {{ .Values.nxfParams.fusion | default true | quote }}
+      enabled =  {{ .Values.nxfParams.fusion | default true }}
     }
 
     tower {

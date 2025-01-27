@@ -13,7 +13,7 @@ data:
 
     process {
       executor = "google-batch"
-      errorStrategy = { task.exitStatus in ((130..145) + 104 + 50001 ) ? 'retry' : 'terminate' }
+      errorStrategy = { task.exitStatus in ((130..145) + 104 ) ? 'retry' : 'terminate' }
       maxRetries = 3
 
       withName: 'DOWNLOAD_SCOREFILES' {
@@ -75,22 +75,25 @@ data:
       project = {{ required ".Values.nxfParams.gcpProject is required" .Values.nxfParams.gcpProject | quote }}
       location = {{ required ".Values.nxfParams.location is required" .Values.nxfParams.location | quote }}
       batch {
-        spot = {{ .Values.nxfParams.spot | default false | quote }}
+        spot = {{ .Values.nxfParams.spot | default false }}
+        maxSpotAttempts = 3
+        autoRetryExitCodes = [50001, 50002, 5004]
+        allowedLocations = ["regions/europe-west2"]
       }
     }
 
     wave {
-      enabled = {{ .Values.nxfParams.wave | default true | quote }}
+      enabled = {{ .Values.nxfParams.wave | default true }}
     }
 
     fusion {
-      enabled =  {{ .Values.nxfParams.fusion | default true | quote }}
+      enabled =  {{ .Values.nxfParams.fusion | default true }}
     }
 
     tower {
       accessToken = {{ required ".Values.secrets.towerToken is required" .Values.secrets.towerToken | quote }}
       workspaceId = {{ required ".Values.secrets.towerId is required" .Values.secrets.towerId | quote }}
-      enabled = {{ .Values.nxfParams.tower | default true | quote }}
+      enabled = {{ .Values.nxfParams.tower | default true }}
     }
 
     // Function to ensure that resource requirements don't go beyond
