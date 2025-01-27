@@ -13,7 +13,7 @@ data:
 
     process {
       executor = "google-batch"
-      errorStrategy = "retry"
+      errorStrategy = { task.exitStatus in ((130..145) + 104 + 50001 ) ? 'retry' : 'terminate' }
       maxRetries = 3
 
       withName: 'DOWNLOAD_SCOREFILES' {
