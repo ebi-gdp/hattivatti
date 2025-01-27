@@ -210,6 +210,32 @@ class SqliteJobDatabase(JobDatabase):
                     job.trigger("error")
                     self.update_job(job)  # don't forget to update the db
 
+    def timeout_deployed_jobs(self, timeout_seconds: int) -> None:
+        """Trigger the error state in any jobs that exceed a timeout limit
+
+        This should rarely trigger (Nextflow processes have time limits).
+        """
+        sql = """
+        SELECT id FROM jobs
+        WHERE state IN ('Deployed')
+            AND created_at <= datetime('now', ? || ' seconds');
+        """
+        logger.info("Checking for deployed jobs for timeout")
+        with sqlite3.connect(self.path) as conn:
+            cursor = conn.cursor()
+            # - is important to select a time in the past
+            cursor.execute(sql, (f"-{timeout_seconds}",))
+            result: list[tuple] = cursor.fetchall()
+
+            if result:
+                logger.info("Jobs exceeding timeout detected")
+                ids: list[str] = [x[0] for x in result]
+                jobs: list[PolygenicScoreJob] = [self.load_job(x) for x in ids]
+                for job in jobs:
+                    logger.warning(f"Killing {job=}")
+                    job.trigger("error")
+                    self.update_job(job)  # don't forget to update the db
+
     def insert_job(self, job: PolygenicScoreJob) -> None:
         pickled_job = pickle.dumps(job)
         sql = """

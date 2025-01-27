@@ -148,9 +148,16 @@ def main() -> None:
     )
     consumer_thread.start()
 
-    # check for timed out jobs with schedule
+    # check for requested/created jobs that never started on cloud batch
+    # (shorter timeout)
     schedule.every(1).minutes.do(
         db.timeout_jobs, timeout_seconds=settings.TIMEOUT_SECONDS
+    )
+
+    # check for long-running deployed jobs that never finished
+    # this is quite rare
+    schedule.every(1).minutes.do(
+        db.timeout_deployed_jobs, timeout_seconds=settings.DEPLOYED_TIMEOUT_SECONDS
     )
 
     # check if job states have changed and produce new messages
