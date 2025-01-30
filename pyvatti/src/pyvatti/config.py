@@ -37,6 +37,12 @@ class Settings(BaseSettings):
         default=60 * 60 * 24 * 2,
         description="Number of seconds before deployed jobs are transitioned to FAILED state ",
     )
+    MIN_OVERLAP: float = Field(
+        ge=0,
+        le=1,
+        default=0.75,
+        description="Minimum variant overlap for launched jobs (pgsc_calc)",
+    )
     TOWER_TOKEN: str = Field(description="Seqera platform token")
     TOWER_WORKSPACE: int = Field(description="Seqera platform workspace ID")
     GLOBUS_DOMAIN: str = Field(description="Globus collection domain")

@@ -181,6 +181,7 @@ def render_template(
     job_values.nxfParams.gcpProject = settings.GCP_PROJECT
     job_values.nxfParams.location = settings.GCP_LOCATION
     job_values.calcJobParams.outdir = f"gs://{results_bucket_path}/results"
+    job_values.calcJobParams.min_overlap = settings.MIN_OVERLAP
 
     job_values.calcWorkflowInput = job.pipeline_param.target_genomes
     job_values.globflowInput = job.globus_details
