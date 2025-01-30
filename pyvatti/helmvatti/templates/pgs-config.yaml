@@ -13,19 +13,20 @@ data:
 
     process {
       executor = "google-batch"
-      errorStrategy = { task.exitStatus in ((130..145) + 104 ) ? 'retry' : 'terminate' }
+      // checking exit codes is unreliable on batch
+      errorStrategy = "retry"
       maxRetries = 3
 
       withName: 'DOWNLOAD_SCOREFILES' {
         cpus = 1
-        memory = { check_max( 1.GB * task.attempt, 'memory') }
+        memory = 1.GB
         time = { check_max( 1.hour * task.attempt, 'time') }
       }
 
       withName: 'COMBINE_SCOREFILES' {
         cpus = 1
-        memory = { check_max( 8.GB * task.attempt, 'memory') }
-        time = { check_max( 24.hour * task.attempt, 'time') }
+        memory = { check_max( 32.GB * task.attempt, 'memory') }
+        time = { check_max( 2.hour * task.attempt, 'time') }
       }
 
       withName: 'DUMPSOFTWAREVERSIONS' {
@@ -77,7 +78,7 @@ data:
       batch {
         spot = {{ .Values.nxfParams.spot | default false }}
         maxSpotAttempts = 3
-        autoRetryExitCodes = [50001, 50002, 5004]
+        autoRetryExitCodes = [50001, 50002, 50004]
         allowedLocations = ["regions/europe-west2"]
       }
     }
@@ -87,7 +88,7 @@ data:
     }
 
     fusion {
-      enabled =  {{ .Values.nxfParams.fusion | default true }}
+      enabled = {{ .Values.nxfParams.fusion | default true }}
     }
 
     tower {
