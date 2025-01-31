@@ -26,7 +26,7 @@ data:
       withName: 'COMBINE_SCOREFILES' {
         cpus = 1
         memory = { check_max( 32.GB * task.attempt, 'memory') }
-        time = { check_max( 2.hour * task.attempt, 'time') }
+        time = { check_max( 8.hour * task.attempt, 'time') }
       }
 
       withName: 'DUMPSOFTWAREVERSIONS' {
@@ -49,13 +49,13 @@ data:
 
       withName: 'MATCH_VARIANTS' {
         cpus = 2
-        memory = { check_max( 32.GB * task.attempt, 'memory') }
+        memory = { check_max( 64.GB * task.attempt, 'memory') }
         time = { check_max( 6.hour * task.attempt, 'time') }
       }
 
       withName: 'MATCH_COMBINE' {
         cpus = 2
-        memory = { check_max( 32.GB * task.attempt, 'memory') }
+        memory = { check_max( 64.GB * task.attempt, 'memory') }
         time = { check_max( 6.hour * task.attempt, 'time') }
       }
 
