@@ -84,6 +84,10 @@ class Settings(BaseSettings):
         description="Maximum number of concurrent jobs to run on GKE cluster.",
         default=10,
     )
+    MAX_KAFKA_FAILS: PositiveInt = Field(
+        description="Maximum number of Kafka failures to tolerate before exploding.",
+        default=10,
+    )
 
     @model_validator(mode="after")
     def check_mandatory_settings(self) -> Self:

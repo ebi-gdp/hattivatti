@@ -23,7 +23,9 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 kafka_logger = logging.getLogger("kafka")
 kafka_logger.setLevel(logging.WARNING)
+
 KAFKA_NOT_OK = threading.Event()
+KAFKA_FAIL_COUNT: int = 0
 
 
 def check_job_state(db: SqliteJobDatabase, settings: Settings) -> None:
@@ -124,6 +126,33 @@ def process_message(msg_value: dict, db: SqliteJobDatabase, settings: Settings) 
         logger.critical(f"Something went wildly wrong, skipping job: {e}")
 
 
+def start_kafka_thread(*, db, topic, host, port, settings) -> None:
+    KAFKA_NOT_OK.clear()
+    threading.Thread(
+        target=kafka_consumer,
+        daemon=True,
+        kwargs={
+            "db": db,
+            "topic": topic,
+            "bootstrap_server_host": host,
+            "bootstrap_server_port": port,
+            "settings": settings,
+        },
+    ).start()
+
+
+def reset_kafka_fail_count() -> None:
+    """
+    Reset the kafka fail count.
+
+    The kafka thread is restarted until the max fail count is reached.
+
+    Once reached, the application explodes.
+    """
+    global KAFKA_FAIL_COUNT
+    KAFKA_FAIL_COUNT = 0
+
+
 def main() -> None:
     # create the job database if it does not exist (if it exists, nothing happens here)
     settings = Settings()
@@ -135,18 +164,13 @@ def main() -> None:
     if settings.KAFKA_BOOTSTRAP_SERVER is None:
         raise ValueError("KAFKA_BOOTSTRAP_SERVER is mandatory but not set")
 
-    consumer_thread: threading.Thread = threading.Thread(
-        target=kafka_consumer,
-        daemon=True,
-        kwargs={
-            "db": db,
-            "topic": settings.KAFKA_CONSUMER_TOPIC,
-            "bootstrap_server_host": settings.KAFKA_BOOTSTRAP_SERVER.host,
-            "bootstrap_server_port": settings.KAFKA_BOOTSTRAP_SERVER.port,
-            "settings": settings,
-        },
+    start_kafka_thread(
+        db=db,
+        topic=settings.KAFKA_CONSUMER_TOPIC,
+        host=settings.KAFKA_BOOTSTRAP_SERVER.host,
+        port=settings.KAFKA_BOOTSTRAP_SERVER.port,
+        settings=settings,
     )
-    consumer_thread.start()
 
     # check for requested/created jobs that never started on cloud batch
     # (shorter timeout)
@@ -171,12 +195,25 @@ def main() -> None:
         bucket_prefix=f"{settings.NAMESPACE.value}-intp",
     )
 
+    schedule.every(1).hours.do(reset_kafka_fail_count)
+
     # run scheduled tasks:
     while True:
         schedule.run_pending()
 
         if KAFKA_NOT_OK.is_set():
-            raise SystemExit("Kafka error that can't be fixed")
+            # restart the kafka thread
+            start_kafka_thread(
+                db=db,
+                topic=settings.KAFKA_CONSUMER_TOPIC,
+                host=settings.KAFKA_BOOTSTRAP_SERVER.host,
+                port=settings.KAFKA_BOOTSTRAP_SERVER.port,
+                settings=settings,
+            )
+            global KAFKA_FAIL_COUNT
+            KAFKA_FAIL_COUNT += 1
+            if KAFKA_FAIL_COUNT > settings.MAX_KAFKA_FAILS:
+                raise Exception("Kafka thread failed too many times")
 
         time.sleep(1)
 
