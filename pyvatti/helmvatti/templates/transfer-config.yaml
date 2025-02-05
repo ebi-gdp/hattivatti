@@ -21,7 +21,7 @@ data:
       project = {{ required ".Values.nxfParams.gcpProject is required" .Values.nxfParams.gcpProject | quote }}
       location = {{ required ".Values.nxfParams.location is required" .Values.nxfParams.location | quote }}
       batch {
-        spot = {{ .Values.nxfParams.spot | default false }}
+        spot = {{ .Values.nxfParams.spot | default true }}
         maxSpotAttempts = 3
         autoRetryExitCodes = [50001, 50002, 50004]
         allowedLocations = ["regions/europe-west2"]
