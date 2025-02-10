@@ -76,14 +76,14 @@ def check_job_state(
 def kafka_consumer(
     db: SqliteJobDatabase,
     topic: str,
-    bootstrap_server_host: str,
-    bootstrap_server_port: int,
+    host: str,
+    port: int,
     settings: Settings,
 ) -> None:
     try:
         consumer = KafkaConsumer(
             topic,
-            bootstrap_servers=f"{bootstrap_server_host}:{bootstrap_server_port}",
+            bootstrap_servers=f"{host}:{port}",
             enable_auto_commit=False,
             group_id="hattivatti",
         )
@@ -125,7 +125,7 @@ def kafka_producer(
             logger.critical(f"Kafka error: {e}")
             KAFKA_PRODUCER_NOT_OK.set()
         else:
-            producer.send(topic, msg.model_json())
+            producer.send(topic, msg.model_dump_json())
             logger.info(f"{msg=} sent to pipeline-notify topic")
 
 
@@ -155,6 +155,7 @@ def start_consumer_thread(
     *, db: SqliteJobDatabase, topic: str, host: str, port: int, settings: Settings
 ) -> None:
     """Start a thread to consume messages from the pipeline-kaunch topic"""
+    logger.info("Starting kafka consumer thread")
     KAFKA_CONSUMER_NOT_OK.clear()
     threading.Thread(
         target=kafka_consumer,
@@ -162,26 +163,27 @@ def start_consumer_thread(
         kwargs={
             "db": db,
             "topic": topic,
-            "bootstrap_server_host": host,
-            "bootstrap_server_port": port,
+            "host": host,
+            "port": port,
             "settings": settings,
         },
     ).start()
 
 
 def start_producer_thread(
-    *, topic: str, host: str, port: int, queue: SimpleQueue[BackendStatusMessage]
+    *, topic: str, host: str, port: int, msg_queue: SimpleQueue[BackendStatusMessage]
 ) -> None:
     """Start a thread to read notification messages from the queue and send them to pipeline-notify"""
+    logger.info("Starting kafka producer thread")
     KAFKA_PRODUCER_NOT_OK.clear()
     threading.Thread(
         target=kafka_producer,
         daemon=True,
         kwargs={
             "topic": topic,
-            "bootstrap_server_host": host,
-            "bootstrap_server_port": port,
-            "queue": queue,
+            "host": host,
+            "port": port,
+            "msg_queue": msg_queue,
         },
     ).start()
 
@@ -202,15 +204,15 @@ def main() -> None:
     if settings.KAFKA_BOOTSTRAP_SERVER is None:
         raise TypeError("Missing mandatory kafka argument")
     else:
-        bootstrap_server_host: str = settings.KAFKA_BOOTSTRAP_SERVER.host
-        bootstrap_server_port: int = settings.KAFKA_BOOTSTRAP_SERVER.port
+        kafka_host: str = settings.KAFKA_BOOTSTRAP_SERVER.host
+        kafka_port: int = settings.KAFKA_BOOTSTRAP_SERVER.port
 
     # consume new kafka messages and insert them into the database in a background thread
     start_consumer_thread(
         db=db,
         topic=consumer_topic,
-        host=bootstrap_server_host,
-        port=bootstrap_server_port,
+        host=kafka_host,
+        port=kafka_port,
         settings=settings,
     )
 
@@ -218,9 +220,9 @@ def main() -> None:
     msg_queue: SimpleQueue[BackendStatusMessage] = queue.SimpleQueue()
     start_producer_thread(
         topic=producer_topic,
-        host=bootstrap_server_host,
-        port=bootstrap_server_port,
-        queue=msg_queue,
+        host=kafka_host,
+        port=kafka_port,
+        msg_queue=msg_queue,
     )
 
     # check for requested/created jobs that never started on cloud batch
@@ -253,9 +255,9 @@ def main() -> None:
             # restart the kafka consumer thread
             start_consumer_thread(
                 db=db,
-                topic=settings.KAFKA_CONSUMER_TOPIC,
-                host=settings.KAFKA_BOOTSTRAP_SERVER.host,
-                port=settings.KAFKA_BOOTSTRAP_SERVER.port,
+                topic=consumer_topic,
+                host=kafka_host,
+                port=kafka_port,
                 settings=settings,
             )
             kafka_fail_count += 1
@@ -263,10 +265,10 @@ def main() -> None:
         if KAFKA_PRODUCER_NOT_OK.is_set():
             # restart the kafka producer thread
             start_producer_thread(
-                topic=settings.KAFKA_CONSUMER_TOPIC,
-                host=settings.KAFKA_BOOTSTRAP_SERVER.host,
-                port=settings.KAFKA_BOOTSTRAP_SERVER.port,
-                queue=msg_queue,
+                topic=producer_topic,
+                host=kafka_host,
+                port=kafka_port,
+                msg_queue=msg_queue,
             )
             kafka_fail_count += 1
 
