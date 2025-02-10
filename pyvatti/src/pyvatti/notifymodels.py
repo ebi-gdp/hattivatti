@@ -142,7 +142,7 @@ class BackendStatusMessage(BaseModel):
     trace_exit: Optional[int] = Field(default=None)
 
     @model_serializer()
-    def serialize_model(self):
+    def serialize_model(self) -> dict:
         """Only serialize trace information when there's a failure"""
         if self.event == States.FAILED:
             return {

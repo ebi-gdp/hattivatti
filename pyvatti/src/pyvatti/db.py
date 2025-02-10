@@ -5,6 +5,7 @@ import pathlib
 import pickle
 import sqlite3
 import abc
+from multiprocessing.queues import SimpleQueue
 from typing import Optional
 
 from pyvatti.pgsjob import PolygenicScoreJob  # type: ignore[attr-defined]
@@ -52,7 +53,7 @@ class JobDatabase(abc.ABC):
         ...
 
     @abc.abstractmethod
-    def timeout_jobs(self, timeout_seconds: int) -> None:
+    def timeout_jobs(self, timeout_seconds: int, queue: SimpleQueue) -> None:
         """Check if any unfinished jobs exceed the timeout.
 
         If they do, job objects should be loaded and the error state triggered
@@ -70,11 +71,16 @@ class SqliteJobDatabase(JobDatabase):
 
     Create a new job database on application startup:
 
+    >>> import queue
     >>> from tempfile import NamedTemporaryFile
     >>> from pyvatti.pgsjob import PolygenicScoreJob
     >>> db_path = NamedTemporaryFile(delete=False)
     >>> db = SqliteJobDatabase(path=db_path.name)
     >>> db.create()
+
+    Prepare a message queue:
+
+    >>> q = queue.SimpleQueue()
 
     Create a new job:
 
@@ -97,7 +103,7 @@ class SqliteJobDatabase(JobDatabase):
 
     Update the job state:
 
-    >>> _ = job.trigger("deploy")
+    >>> _ = job.trigger("deploy", queue=q)
     >>> job.state
     <States.DEPLOYED: 'Deployed'>
 
@@ -138,7 +144,7 @@ class SqliteJobDatabase(JobDatabase):
     >>> db.get_active_jobs()
     [PolygenicScoreJob(id='test')]
 
-    >>> db.timeout_jobs(timeout_seconds=60)
+    >>> db.timeout_jobs(timeout_seconds=60, queue=q)
 
     Check for active jobs:
 
@@ -184,7 +190,7 @@ class SqliteJobDatabase(JobDatabase):
         with sqlite3.connect(self.path) as conn:
             conn.executescript(schema)
 
-    def timeout_jobs(self, timeout_seconds: int) -> None:
+    def timeout_jobs(self, timeout_seconds: int, queue: SimpleQueue) -> None:
         """Trigger the error state in any jobs that exceed a timeout limit
 
         If a job has deployed successfully, it will timeout by itself because of --max_time capping processes
@@ -207,10 +213,10 @@ class SqliteJobDatabase(JobDatabase):
                 jobs: list[PolygenicScoreJob] = [self.load_job(x) for x in ids]
                 for job in jobs:
                     logger.warning(f"Killing {job=}")
-                    job.trigger("error")
+                    job.trigger("error", queue=queue)
                     self.update_job(job)  # don't forget to update the db
 
-    def timeout_deployed_jobs(self, timeout_seconds: int) -> None:
+    def timeout_deployed_jobs(self, timeout_seconds: int, queue: SimpleQueue) -> None:
         """Trigger the error state in any jobs that exceed a timeout limit
 
         This should rarely trigger (Nextflow processes have time limits).
@@ -233,7 +239,7 @@ class SqliteJobDatabase(JobDatabase):
                 jobs: list[PolygenicScoreJob] = [self.load_job(x) for x in ids]
                 for job in jobs:
                     logger.warning(f"Killing {job=}")
-                    job.trigger("error")
+                    job.trigger("error", queue=queue)
                     self.update_job(job)  # don't forget to update the db
 
     def insert_job(self, job: PolygenicScoreJob) -> None:

@@ -5,10 +5,10 @@ import logging
 import sys
 from datetime import datetime
 from functools import lru_cache
+from queue import SimpleQueue
 from typing import Optional, ClassVar
 
 import httpx
-from kafka import KafkaProducer
 from transitions import Machine, EventData, MachineError
 
 from pyvatti.config import Settings, K8SNamespace
@@ -28,6 +28,10 @@ class PolygenicScoreJob(Machine):
 
     >>> import sys
     >>> logger.addHandler(logging.StreamHandler(sys.stdout))
+
+    It's important to use a queue to put state messages in:
+    >>> q = SimpleQueue()
+
     >>> job = PolygenicScoreJob("INT123456", dry_run=True)
     >>> job
     PolygenicScoreJob(id='INT123456')
@@ -39,14 +43,14 @@ class PolygenicScoreJob(Machine):
 
     Normally creating a resource requires some parameters from a message, but not in dry run mdoe:
 
-    >>> job.trigger("create", )  # doctest: +ELLIPSIS
+    >>> job.trigger("create")  # doctest: +ELLIPSIS
     Creating resources for INT123456
     Job message: None
     ...
 
     A job is deployed once it's live on the cluster, doing work, and sending logs:
 
-    >>> job.trigger("deploy")  # doctest: +ELLIPSIS
+    >>> job.trigger("deploy", queue=q)  # doctest: +ELLIPSIS
     Sending state notification: States.DEPLOYED
     ...
 
@@ -54,7 +58,7 @@ class PolygenicScoreJob(Machine):
 
     A job may enter the succeed state if it's received a message confirming this:
 
-    >>> job.trigger("succeed") # doctest: +ELLIPSIS
+    >>> job.trigger("succeed", queue=q) # doctest: +ELLIPSIS
     Sending state notification: States.SUCCEEDED
     msg='{"run_name":"INT123456","utc_time":...,"event":"Succeeded"}' prepared to send to pipeline-notify topic (PYTEST RUNNING)
     Deleting all resources: INT123456
@@ -62,7 +66,7 @@ class PolygenicScoreJob(Machine):
 
     State machines are helpful to prevent illegal state transitions. For example, once a job has succeeded it can't error:
 
-    >>> job.trigger("error")  # doctest: +ELLIPSIS
+    >>> job.trigger("error", queue=q)  # doctest: +ELLIPSIS
     Traceback (most recent call last):
     ...
     transitions.core.MachineError: "Can't trigger event error from state SUCCEEDED!"
@@ -70,7 +74,7 @@ class PolygenicScoreJob(Machine):
     Let's look at a misbehaving job:
 
     >>> bad_job = PolygenicScoreJob("INT789123", dry_run=True)
-    >>> bad_job.trigger("error")  # doctest: +ELLIPSIS
+    >>> bad_job.trigger("error", queue=q)  # doctest: +ELLIPSIS
     Sending state notification: States.FAILED
     msg='{"run_name":"INT789123","utc_time":"...","event":"Failed","trace_name":null,"trace_exit":null}' prepared to send to pipeline-notify topic (PYTEST RUNNING)
     Deleting all resources: INT789123
@@ -199,36 +203,28 @@ class PolygenicScoreJob(Machine):
         logger.info(f"Deleting all resources: {self.intp_id}")
         self.handler.destroy_resources(state=event.state.value)
 
-    def notify(self, _: EventData):
+    def notify(self, event: EventData):
         """Notify the backend about the job state"""
         # bootstrap_server_host: str, bootstrap_server_port: int
+        queue: Optional[SimpleQueue] = event.kwargs.get("queue", None)
+        if queue is None:
+            raise TypeError("Can't notify without a queue kwarg to the notify method")
+
         logger.info(f"Sending state notification: {self.state}")
-        msg: str = BackendStatusMessage(
+        msg: BackendStatusMessage = BackendStatusMessage(
             run_name=self.intp_id,
             utc_time=datetime.now(),
             event=self.state,
             trace_name=self.trace_name,
             trace_exit=self.trace_exit,
-        ).model_dump_json()
+        )
         if "pytest" in sys.modules:
+            queue.put(msg)
             logger.info(
                 f"{msg=} prepared to send to pipeline-notify topic (PYTEST RUNNING)"
             )
         else:
-            producer_topic: str = self.handler.settings.KAFKA_PRODUCER_TOPIC
-            bootstrap_server_host: str = (
-                self.handler.settings.KAFKA_BOOTSTRAP_SERVER.host
-            )
-            bootstrap_server_port: int = (
-                self.handler.settings.KAFKA_BOOTSTRAP_SERVER.port
-            )
-
-            producer = KafkaProducer(
-                bootstrap_servers=[f"{bootstrap_server_host}:{bootstrap_server_port}"],
-                value_serializer=lambda v: v.encode("utf-8"),
-            )
-            producer.send(producer_topic, msg)
-            producer.flush()
+            queue.put(msg)
             logger.info(f"{msg=} sent to pipeline-notify topic")
 
     def get_seqera_log(

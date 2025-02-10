@@ -1,8 +1,10 @@
 import json
 import logging
+import queue
 import threading
 import time
 from datetime import datetime, timezone, timedelta
+from queue import SimpleQueue
 from typing import Optional
 
 import pydantic
@@ -12,9 +14,9 @@ from google.cloud import storage
 from pyvatti.config import Settings
 from pyvatti.db import SqliteJobDatabase
 
-from kafka import KafkaConsumer, errors
+from kafka import KafkaConsumer, errors, KafkaProducer
 
-from pyvatti.notifymodels import SeqeraLog
+from pyvatti.notifymodels import SeqeraLog, BackendStatusMessage
 from pyvatti.pgsjob import PolygenicScoreJob  # type: ignore[attr-defined]
 from pyvatti.jobstates import States
 from pyvatti.messagemodels import JobRequest
@@ -24,11 +26,13 @@ logger.setLevel(logging.INFO)
 kafka_logger = logging.getLogger("kafka")
 kafka_logger.setLevel(logging.WARNING)
 
-KAFKA_NOT_OK = threading.Event()
-KAFKA_FAIL_COUNT: int = 0
+KAFKA_CONSUMER_NOT_OK = threading.Event()
+KAFKA_PRODUCER_NOT_OK = threading.Event()
 
 
-def check_job_state(db: SqliteJobDatabase, settings: Settings) -> None:
+def check_job_state(
+    db: SqliteJobDatabase, settings: Settings, queue: SimpleQueue
+) -> None:
     """Check the state of the job on the Seqera Platform and update active jobs in the database if the state has changed
 
     Created (resources requested) -> Deployed (running) -> Succeeded / Failed
@@ -65,7 +69,7 @@ def check_job_state(db: SqliteJobDatabase, settings: Settings) -> None:
                 # get the trigger from the destination state enum
                 # e.g. "deploy" -> "succeed" / "error"
                 trigger: str = PolygenicScoreJob.state_trigger_map[job_state]
-                job.trigger(trigger)
+                job.trigger(trigger, queue=queue)
                 db.update_job(job)
 
 
@@ -101,7 +105,28 @@ def kafka_consumer(
                 consumer.commit()
     except errors.KafkaError as e:
         logger.critical(f"Kafka error: {e}")
-        KAFKA_NOT_OK.set()
+        KAFKA_CONSUMER_NOT_OK.set()
+
+
+def kafka_producer(
+    topic: str, host: str, port: int, msg_queue: SimpleQueue[BackendStatusMessage]
+) -> None:
+    producer = KafkaProducer(
+        bootstrap_servers=[f"{host}:{port}"],
+        value_serializer=lambda v: v.encode("utf-8"),
+    )
+
+    while True:
+        try:
+            msg: BackendStatusMessage = msg_queue.get(block=False, timeout=1)
+        except queue.Empty:
+            time.sleep(1)
+        except errors.KafkaError as e:
+            logger.critical(f"Kafka error: {e}")
+            KAFKA_PRODUCER_NOT_OK.set()
+        else:
+            producer.send(topic, msg.model_json())
+            logger.info(f"{msg=} sent to pipeline-notify topic")
 
 
 def process_message(msg_value: dict, db: SqliteJobDatabase, settings: Settings) -> None:
@@ -126,8 +151,11 @@ def process_message(msg_value: dict, db: SqliteJobDatabase, settings: Settings) 
         logger.critical(f"Something went wildly wrong, skipping job: {e}")
 
 
-def start_kafka_thread(*, db, topic, host, port, settings) -> None:
-    KAFKA_NOT_OK.clear()
+def start_consumer_thread(
+    *, db: SqliteJobDatabase, topic: str, host: str, port: int, settings: Settings
+) -> None:
+    """Start a thread to consume messages from the pipeline-kaunch topic"""
+    KAFKA_CONSUMER_NOT_OK.clear()
     threading.Thread(
         target=kafka_consumer,
         daemon=True,
@@ -141,79 +169,112 @@ def start_kafka_thread(*, db, topic, host, port, settings) -> None:
     ).start()
 
 
-def reset_kafka_fail_count() -> None:
-    """
-    Reset the kafka fail count.
-
-    The kafka thread is restarted until the max fail count is reached.
-
-    Once reached, the application explodes.
-    """
-    global KAFKA_FAIL_COUNT
-    KAFKA_FAIL_COUNT = 0
+def start_producer_thread(
+    *, topic: str, host: str, port: int, queue: SimpleQueue[BackendStatusMessage]
+) -> None:
+    """Start a thread to read notification messages from the queue and send them to pipeline-notify"""
+    KAFKA_PRODUCER_NOT_OK.clear()
+    threading.Thread(
+        target=kafka_producer,
+        daemon=True,
+        kwargs={
+            "topic": topic,
+            "bootstrap_server_host": host,
+            "bootstrap_server_port": port,
+            "queue": queue,
+        },
+    ).start()
 
 
 def main() -> None:
+    kafka_fail_count: int = 0
     # create the job database if it does not exist (if it exists, nothing happens here)
     settings = Settings()
     db = SqliteJobDatabase(str(settings.SQLITE_DB_PATH))
-
     db.create()
 
-    # consume new kafka messages and insert them into the database in a background thread
-    if settings.KAFKA_BOOTSTRAP_SERVER is None:
-        raise ValueError("KAFKA_BOOTSTRAP_SERVER is mandatory but not set")
+    if settings.KAFKA_PRODUCER_TOPIC is None or settings.KAFKA_CONSUMER_TOPIC is None:
+        raise TypeError("Missing mandatory kafka argument")
+    else:
+        consumer_topic: str = settings.KAFKA_CONSUMER_TOPIC
+        producer_topic: str = settings.KAFKA_PRODUCER_TOPIC
 
-    start_kafka_thread(
+    if settings.KAFKA_BOOTSTRAP_SERVER is None:
+        raise TypeError("Missing mandatory kafka argument")
+    else:
+        bootstrap_server_host: str = settings.KAFKA_BOOTSTRAP_SERVER.host
+        bootstrap_server_port: int = settings.KAFKA_BOOTSTRAP_SERVER.port
+
+    # consume new kafka messages and insert them into the database in a background thread
+    start_consumer_thread(
         db=db,
-        topic=settings.KAFKA_CONSUMER_TOPIC,
-        host=settings.KAFKA_BOOTSTRAP_SERVER.host,
-        port=settings.KAFKA_BOOTSTRAP_SERVER.port,
+        topic=consumer_topic,
+        host=bootstrap_server_host,
+        port=bootstrap_server_port,
         settings=settings,
+    )
+
+    # create a message queue for the kafka producer thread to read from in a background thread
+    msg_queue: SimpleQueue[BackendStatusMessage] = queue.SimpleQueue()
+    start_producer_thread(
+        topic=producer_topic,
+        host=bootstrap_server_host,
+        port=bootstrap_server_port,
+        queue=msg_queue,
     )
 
     # check for requested/created jobs that never started on cloud batch
     # (shorter timeout)
     schedule.every(1).minutes.do(
-        db.timeout_jobs, timeout_seconds=settings.TIMEOUT_SECONDS
+        db.timeout_jobs, timeout_seconds=settings.TIMEOUT_SECONDS, queue=msg_queue
     )
 
     # check for long-running deployed jobs that never finished
     # this is quite rare
     schedule.every(1).minutes.do(
-        db.timeout_deployed_jobs, timeout_seconds=settings.DEPLOYED_TIMEOUT_SECONDS
+        db.timeout_deployed_jobs,
+        timeout_seconds=settings.DEPLOYED_TIMEOUT_SECONDS,
+        queue=msg_queue,
     )
 
     # check if job states have changed and produce new messages
     schedule.every(settings.POLL_INTERVAL).seconds.do(
-        check_job_state, db=db, settings=settings
+        check_job_state, db=db, settings=settings, queue=msg_queue
     )
 
-    schedule.every(1).minutes.do(
+    schedule.every(1).hours.do(
         bucket_clean_up,
         project_id=settings.GCP_PROJECT,
         bucket_prefix=f"{settings.NAMESPACE.value}-intp",
     )
 
-    schedule.every(1).hours.do(reset_kafka_fail_count)
-
-    # run scheduled tasks:
     while True:
-        schedule.run_pending()
-
-        if KAFKA_NOT_OK.is_set():
-            # restart the kafka thread
-            start_kafka_thread(
+        if KAFKA_CONSUMER_NOT_OK.is_set():
+            # restart the kafka consumer thread
+            start_consumer_thread(
                 db=db,
                 topic=settings.KAFKA_CONSUMER_TOPIC,
                 host=settings.KAFKA_BOOTSTRAP_SERVER.host,
                 port=settings.KAFKA_BOOTSTRAP_SERVER.port,
                 settings=settings,
             )
-            global KAFKA_FAIL_COUNT
-            KAFKA_FAIL_COUNT += 1
-            if KAFKA_FAIL_COUNT > settings.MAX_KAFKA_FAILS:
-                raise Exception("Kafka thread failed too many times")
+            kafka_fail_count += 1
+
+        if KAFKA_PRODUCER_NOT_OK.is_set():
+            # restart the kafka producer thread
+            start_producer_thread(
+                topic=settings.KAFKA_CONSUMER_TOPIC,
+                host=settings.KAFKA_BOOTSTRAP_SERVER.host,
+                port=settings.KAFKA_BOOTSTRAP_SERVER.port,
+                queue=msg_queue,
+            )
+            kafka_fail_count += 1
+
+        if kafka_fail_count > settings.MAX_KAFKA_FAILS:
+            raise Exception("Kafka thread failed too many times, exploding loudly")
+
+        # run any pending tasks
+        schedule.run_pending()
 
         time.sleep(1)
 
