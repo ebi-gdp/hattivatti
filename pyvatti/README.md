@@ -1,19 +1,22 @@
 # pyvatti
 
-pyvatti is a python service for launching PGS Catalog Calculator jobs in different environments.
+pyvatti is a python service for launching PGS Catalog Calculator jobs for GeneticScores.org jobs in different environments.
 
-## Installation
+## Developer instructions 
+
+Set up a virtual environment using nox and uv:
 
 ```bash
 $ git clone https://github.com/ebi-gdp/hattivatti.git
 $ cd hattivatti/pyvatti
-$ poetry install
+$ nox -s dev
 ```
 
 ## Usage
 
 ```bash
-$ poetry run pyvatti 
+$ source .venv/bin/activate
+$ pyvatti 
 ```
 
 ## Configuration
