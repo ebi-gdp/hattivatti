@@ -2,7 +2,7 @@
 
 import enum
 import pathlib
-from typing import Optional, Self, Annotated, Any, Iterator
+from typing import Optional, Self, Annotated, Any
 
 from pydantic import (
     BaseModel,
@@ -40,7 +40,7 @@ class GlobusFile(BaseModel):
 
     @field_validator("filename")  # type: ignore
     @classmethod
-    def must_have_c4gh_suffix(cls, value: str):
+    def must_have_c4gh_suffix(cls, value: str) -> str:
         if value.endswith(".c4gh"):
             return value
         else:
@@ -328,9 +328,8 @@ class SecretKeyDetails(BaseModel):
 class TargetGenomes(RootModel):
     root: list[TargetGenome]
 
-    def __iter__(self) -> Iterator[TargetGenome]:
-        for item in self.root:
-            yield item
+    def __iter__(self):
+        return iter(self.root)
 
 
 class PGSJobParams(BaseModel):

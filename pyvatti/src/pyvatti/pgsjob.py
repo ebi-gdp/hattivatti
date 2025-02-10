@@ -60,7 +60,7 @@ class PolygenicScoreJob(Machine):
 
     >>> job.trigger("succeed", queue=q) # doctest: +ELLIPSIS
     Sending state notification: States.SUCCEEDED
-    msg='{"run_name":"INT123456","utc_time":...,"event":"Succeeded"}' prepared to send to pipeline-notify topic (PYTEST RUNNING)
+    msg=BackendStatusMessage(run_name='INT123456', utc_time=datetime.datetime(...), event=<States.SUCCEEDED: 'Succeeded'>, trace_name=None, trace_exit=None) prepared to send to pipeline-notify topic (PYTEST RUNNING)
     Deleting all resources: INT123456
     ...
 
@@ -76,7 +76,7 @@ class PolygenicScoreJob(Machine):
     >>> bad_job = PolygenicScoreJob("INT789123", dry_run=True)
     >>> bad_job.trigger("error", queue=q)  # doctest: +ELLIPSIS
     Sending state notification: States.FAILED
-    msg='{"run_name":"INT789123","utc_time":"...","event":"Failed","trace_name":null,"trace_exit":null}' prepared to send to pipeline-notify topic (PYTEST RUNNING)
+    msg=BackendStatusMessage(run_name='INT789123', utc_time=datetime.datetime(...), event=<States.FAILED: 'Failed'>, trace_name=None, trace_exit=None) prepared to send to pipeline-notify topic (PYTEST RUNNING)
     Deleting all resources: INT789123
     ...
 

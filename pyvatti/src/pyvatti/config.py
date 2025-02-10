@@ -66,7 +66,7 @@ class Settings(BaseSettings):
     )
     SQLITE_DB_PATH: pathlib.Path = Field(
         description="Path to a sqlite database",
-        default_factory=lambda: NamedTemporaryFile(delete=False).name,
+        default_factory=lambda: pathlib.Path(NamedTemporaryFile(delete=False).name),
     )
     KAFKA_BOOTSTRAP_SERVER: Optional[KafkaDsn] = Field(default=None)
     KAFKA_CONSUMER_TOPIC: Optional[str] = Field(default="pipeline-launch")

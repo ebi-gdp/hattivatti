@@ -241,15 +241,15 @@ def helm_install(
 
     with tempfile.NamedTemporaryFile(mode="wt") as temp_f:
         yaml.dump(template, temp_f)
-        cmd = [
+        cmd: list[str] = [
             "helm",
             "install",
             release_name,
-            helm_chart_path,
+            str(helm_chart_path),
             "-n",
-            namespace.value,
+            str(namespace.value),
             "-f",
-            temp_f.name,
+            str(temp_f.name),
         ]
         helm: subprocess.CompletedProcess = subprocess.run(cmd)
 

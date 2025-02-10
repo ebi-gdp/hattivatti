@@ -191,7 +191,7 @@ def start_producer_thread(
 def main() -> None:
     kafka_fail_count: int = 0
     # create the job database if it does not exist (if it exists, nothing happens here)
-    settings = Settings()
+    settings = Settings()  # type: ignore
     db = SqliteJobDatabase(str(settings.SQLITE_DB_PATH))
     db.create()
 
@@ -203,9 +203,15 @@ def main() -> None:
 
     if settings.KAFKA_BOOTSTRAP_SERVER is None:
         raise TypeError("Missing mandatory kafka argument")
-    else:
-        kafka_host: str = settings.KAFKA_BOOTSTRAP_SERVER.host
-        kafka_port: int = settings.KAFKA_BOOTSTRAP_SERVER.port
+
+    if (
+        settings.KAFKA_BOOTSTRAP_SERVER.host is None
+        or settings.KAFKA_BOOTSTRAP_SERVER.port is None
+    ):
+        raise TypeError("Missing mandatory kafka argument")
+
+    kafka_host: str = settings.KAFKA_BOOTSTRAP_SERVER.host
+    kafka_port: int = settings.KAFKA_BOOTSTRAP_SERVER.port
 
     # consume new kafka messages and insert them into the database in a background thread
     start_consumer_thread(
