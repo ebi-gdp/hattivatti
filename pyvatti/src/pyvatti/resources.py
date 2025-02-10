@@ -254,8 +254,8 @@ def helm_install(
         helm: subprocess.CompletedProcess = subprocess.run(cmd)
 
     if helm.returncode != 0:
+        logger.critical("helm install failed")
         logger.critical(f"{helm.stderr}")
-        raise ValueError("helm install failed")
     else:
         logger.info("helm install OK")
 
@@ -265,7 +265,7 @@ def helm_uninstall(release_name: str, namespace: K8SNamespace) -> None:
     helm: subprocess.CompletedProcess = subprocess.run(cmd)
 
     if helm.returncode != 0:
+        logger.critical("helm uninstall failed")
         logger.critical(f"{helm.stderr}")
-        raise ValueError("helm uninstall failed")
     else:
         logger.info("helm uninstall OK")
