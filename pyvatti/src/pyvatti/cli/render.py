@@ -29,7 +29,7 @@ def main() -> None:
         logger.info(f"Reading message from {args.message_path}")
         msg = json.loads(f.read())
 
-    settings = Settings(_env_file=args.env_path)
+    settings = Settings(_env_file=args.env_path)  # type: ignore
 
     job: JobRequest = JobRequest(**msg)
     template: dict = render_template(

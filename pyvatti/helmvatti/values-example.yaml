@@ -3,7 +3,7 @@
 # Declare variables to be passed into your templates.
 
 baseImage: "dockerhub.ebi.ac.uk/gdp-public/hattivatti/nextflow"
-dockerTag: "24.10.0"
+dockerTag: "24.10.4"
 pullPolicy: "IfNotPresent"
 
 # 1. transfer initContainer configuration
@@ -46,7 +46,7 @@ nxfParams:
   workBucketPath: "gs://testbucket/work"
   gcpProject: "project-id"
   location: "gcp-location"
-  spot: true
+  spot: false
   wave: true
   fusion: true
 

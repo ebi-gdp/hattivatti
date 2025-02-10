@@ -20,7 +20,7 @@ from pydantic import (
 )
 
 from pyvatti.config import Settings
-from pyvatti.messagemodels import JobRequest, GlobusConfig, TargetGenome
+from pyvatti.messagemodels import JobRequest, GlobusConfig, TargetGenomes
 
 
 def parse_value_template(helm_chart_path: pathlib.Path) -> dict:
@@ -42,7 +42,7 @@ class NextflowParams(BaseModel):
 
     @field_validator("workBucketPath")  # type: ignore
     @classmethod
-    def check_gcp_bucket(cls, name: str):
+    def check_gcp_bucket(cls, name: str) -> str:
         if not name.startswith("gs://"):
             raise ValueError("Bucket name doesn't start with gs://")
         return name
@@ -64,7 +64,7 @@ class CalcJobParams(BaseModel):
 
     @field_validator("outdir")  # type: ignore
     @classmethod
-    def check_gcp_bucket(cls, name: str):
+    def check_gcp_bucket(cls, name: str) -> str:
         if not name.startswith("gs://"):
             raise ValueError("Bucket name doesn't start with gs://")
         return name
@@ -129,7 +129,7 @@ class HelmValues(BaseModel):
 
     nxfParams: NextflowParams
 
-    calcWorkflowInput: list[TargetGenome]
+    calcWorkflowInput: TargetGenomes
 
     calcJobParams: CalcJobParams
     keyHandlerSecret: KeyHandlerDetails
@@ -148,6 +148,10 @@ def _add_secrets(job: HelmValues, settings: Settings) -> None:
     job.secrets.globusScopes = settings.GLOBUS_SCOPES
     job.secrets.keyHandlerToken = settings.KEY_HANDLER_TOKEN
     job.secrets.keyHandlerPassword = settings.KEY_HANDLER_PASSWORD
+
+    if settings.KEY_HANDLER_URL is None:
+        raise TypeError("Key handler URL must be set")
+
     job.secrets.keyHandlerURL = settings.KEY_HANDLER_URL
 
 
@@ -181,7 +185,7 @@ def render_template(
     job_values.nxfParams.gcpProject = settings.GCP_PROJECT
     job_values.nxfParams.location = settings.GCP_LOCATION
     job_values.calcJobParams.outdir = f"gs://{results_bucket_path}/results"
-
+    job_values.calcJobParams.min_overlap = settings.MIN_OVERLAP
     job_values.calcWorkflowInput = job.pipeline_param.target_genomes
     job_values.globflowInput = job.globus_details
 

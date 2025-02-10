@@ -54,6 +54,8 @@ spec:
             value: {{ required "db_path required" .Values.litestream.db_path }}
           - name: NAMESPACE
             value: {{ .Release.Namespace }}
+          - name: MIN_OVERLAP
+            value: {{ required "pgsc_calc minOverlap is missing " .Values.pgsc_calc.minOverlap | quote }}
         - name: litestream
           image: litestream/litestream:0.3
           args: ['replicate']

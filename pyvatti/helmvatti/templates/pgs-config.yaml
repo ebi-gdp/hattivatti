@@ -13,18 +13,19 @@ data:
 
     process {
       executor = "google-batch"
+      // checking exit codes is unreliable on batch
       errorStrategy = "retry"
       maxRetries = 3
 
       withName: 'DOWNLOAD_SCOREFILES' {
         cpus = 1
-        memory = { check_max( 1.GB * task.attempt, 'memory') }
+        memory = 1.GB
         time = { check_max( 1.hour * task.attempt, 'time') }
       }
 
       withName: 'COMBINE_SCOREFILES' {
         cpus = 1
-        memory = { check_max( 8.GB * task.attempt, 'memory') }
+        memory = { check_max( 32.GB * task.attempt, 'memory') }
         time = { check_max( 8.hour * task.attempt, 'time') }
       }
 
@@ -48,13 +49,13 @@ data:
 
       withName: 'MATCH_VARIANTS' {
         cpus = 2
-        memory = { check_max( 32.GB * task.attempt, 'memory') }
+        memory = { check_max( 64.GB * task.attempt, 'memory') }
         time = { check_max( 6.hour * task.attempt, 'time') }
       }
 
       withName: 'MATCH_COMBINE' {
         cpus = 2
-        memory = { check_max( 32.GB * task.attempt, 'memory') }
+        memory = { check_max( 64.GB * task.attempt, 'memory') }
         time = { check_max( 6.hour * task.attempt, 'time') }
       }
 
@@ -75,22 +76,25 @@ data:
       project = {{ required ".Values.nxfParams.gcpProject is required" .Values.nxfParams.gcpProject | quote }}
       location = {{ required ".Values.nxfParams.location is required" .Values.nxfParams.location | quote }}
       batch {
-        spot = {{ .Values.nxfParams.spot | default true | quote }}
+        spot = {{ .Values.nxfParams.spot | default true }}
+        maxSpotAttempts = 3
+        autoRetryExitCodes = [50001, 50002, 50004]
+        allowedLocations = ["regions/europe-west2"]
       }
     }
 
     wave {
-      enabled = {{ .Values.nxfParams.wave | default true | quote }}
+      enabled = {{ .Values.nxfParams.wave | default true }}
     }
 
     fusion {
-      enabled =  {{ .Values.nxfParams.fusion | default true | quote }}
+      enabled = {{ .Values.nxfParams.fusion | default true }}
     }
 
     tower {
       accessToken = {{ required ".Values.secrets.towerToken is required" .Values.secrets.towerToken | quote }}
       workspaceId = {{ required ".Values.secrets.towerId is required" .Values.secrets.towerId | quote }}
-      enabled = {{ .Values.nxfParams.tower | default true | quote }}
+      enabled = {{ .Values.nxfParams.tower | default true }}
     }
 
     // Function to ensure that resource requirements don't go beyond

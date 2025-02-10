@@ -26,6 +26,9 @@ litestream:
   db: gcs://bucketname/db
   db_path: /var/lib/pyvatti/db
 
+pgsc_calc:
+  minOverlap: 0.75
+
 secrets:
   globusDomain: "test"
   globusClientId: "test"

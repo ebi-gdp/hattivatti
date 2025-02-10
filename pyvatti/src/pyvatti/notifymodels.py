@@ -9,7 +9,7 @@ import enum
 from functools import lru_cache
 from typing import Optional, Type, Self
 
-from pydantic import BaseModel, PastDatetime
+from pydantic import BaseModel, Field, model_serializer, field_validator
 
 from pyvatti.jobstates import States
 
@@ -61,13 +61,25 @@ class SeqeraLog(BaseModel):
     >>> missing_job = {"workflows":[],"totalSize":0}
     >>> SeqeraLog.from_response(missing_job) is None
     True
+
+    Extract extra information for failing workflows:
+
+    >>> testmsg = pathlib.Path(__file__).parent.parent.parent / "tests" / "data" / "seqera-error.json"
+    >>> with open(testmsg) as f:
+    ...     d = json.load(f)
+    >>> log = SeqeraLog.from_response(d)
+    >>> log.exitStatus  # exit codes are used by pygscatalog to communicate specific errors
+    12
+    >>> log.errorReport
+    "Error executing process > 'PGSCATALOG_PGSCCALC:PGSCCALC:INPUT_CHECK:COMBINE_SCOREFILES (1)'"
     """
 
     runName: str
     start: datetime
     dateCreated: datetime
     status: SeqeraJobStatus
-    exitStatus: Optional[int] = None
+    exitStatus: Optional[int] = Field(default=None)
+    errorReport: Optional[str] = Field(default=None)
 
     @classmethod
     def from_response(cls: Type[Self], json: dict) -> Optional[Self]:
@@ -86,6 +98,13 @@ class SeqeraLog(BaseModel):
             log = None
 
         return log
+
+    @field_validator("errorReport", mode="after")
+    @classmethod
+    def trim_error_message(cls, message: Optional[str]) -> Optional[str]:
+        if message is not None:
+            message = message.strip().split("\n")[0]
+        return message
 
     def get_job_state(self) -> Optional[States]:
         """Get valid job states"""
@@ -110,8 +129,31 @@ class BackendStatusMessage(BaseModel):
     >>> d = {"run_name": "INTP123456", "utc_time": datetime(1999, 12, 31), "event": States.DEPLOYED }
     >>> BackendStatusMessage(**d).model_dump_json()
     '{"run_name":"INTP123456","utc_time":"1999-12-31T00:00:00","event":"Deployed"}'
+
+    >>> d = {"run_name": "INTP123456", "utc_time": datetime(1999, 12, 31), "event": States.FAILED, "trace_name": "failed_process", "trace_exit": 1 }
+    >>> BackendStatusMessage(**d).model_dump_json()
+    '{"run_name":"INTP123456","utc_time":"1999-12-31T00:00:00","event":"Failed","trace_name":"failed_process","trace_exit":1}'
     """
 
     run_name: str
-    utc_time: PastDatetime
+    utc_time: datetime
     event: States
+    trace_name: Optional[str] = Field(default=None)
+    trace_exit: Optional[int] = Field(default=None)
+
+    @model_serializer()
+    def serialize_model(self) -> dict:
+        """Only serialize trace information when there's a failure"""
+        if self.event == States.FAILED:
+            return {
+                "run_name": self.run_name,
+                "utc_time": self.utc_time,
+                "event": self.event,
+                "trace_name": self.trace_name,
+                "trace_exit": self.trace_exit,
+            }
+        return {
+            "run_name": self.run_name,
+            "utc_time": self.utc_time,
+            "event": self.event,
+        }

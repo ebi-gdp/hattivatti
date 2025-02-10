@@ -55,6 +55,8 @@ spec:
             - "gdp-public/pgsc_calc"
             - "-hub"
             - "ebi"
+            - "-profile"
+            - "docker"
             - "-r"
             - "{{ .Chart.AppVersion }}"
             - "-params-file"

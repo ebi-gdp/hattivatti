@@ -84,7 +84,9 @@ class GoogleResourceHandler(ResourceHandler):
         - Run helm install
         """
         logger.info("Creating buckets")
-        self.make_buckets(job_model=job_model)
+        self.make_buckets(
+            job_model=job_model, timeout_seconds=self._settings.DEPLOYED_TIMEOUT_SECONDS
+        )
         try:
             logger.info("Triggering helm install")
             helm_install(
@@ -107,12 +109,12 @@ class GoogleResourceHandler(ResourceHandler):
         else:
             self._delete_buckets(results=False)
 
-    def make_buckets(self, job_model: JobRequest) -> None:
+    def make_buckets(self, job_model: JobRequest, timeout_seconds: int) -> None:
         """Create the buckets needed to run the job"""
-        self._make_work_bucket(job_model)
+        self._make_work_bucket(job_model, timeout_seconds)
         self._make_results_bucket(job_model)
 
-    def _make_work_bucket(self, _: JobRequest) -> None:
+    def _make_work_bucket(self, _: JobRequest, timeout_seconds: int) -> None:
         """Unfortunately google cloud storage doesn't support async
 
         The work bucket has much stricter lifecycle policies than the results bucket
@@ -128,12 +130,18 @@ class GoogleResourceHandler(ResourceHandler):
             self._work_bucket_existed_on_create = True
             raise FileExistsError
 
-        bucket.add_lifecycle_abort_incomplete_multipart_upload_rule(**{"age": 1})
+        # calculate maximum object age from settings.DEPLOYED_TIMEOUT_SECONDS
+        seconds_per_day: int = 86400
+        lifecycle_age: int = max(1, int(timeout_seconds / seconds_per_day))
+
+        bucket.add_lifecycle_abort_incomplete_multipart_upload_rule(
+            **{"age": lifecycle_age}
+        )
 
         # these file suffixes are guaranteed to contain sensitive data
         bucket.add_lifecycle_delete_rule(
             **{
-                "age": 1,
+                "age": lifecycle_age,
                 "matches_suffix": [
                     ".vcf",
                     ".pgen",
@@ -233,21 +241,21 @@ def helm_install(
 
     with tempfile.NamedTemporaryFile(mode="wt") as temp_f:
         yaml.dump(template, temp_f)
-        cmd = [
+        cmd: list[str] = [
             "helm",
             "install",
             release_name,
-            helm_chart_path,
+            str(helm_chart_path),
             "-n",
-            namespace.value,
+            str(namespace.value),
             "-f",
-            temp_f.name,
+            str(temp_f.name),
         ]
         helm: subprocess.CompletedProcess = subprocess.run(cmd)
 
     if helm.returncode != 0:
+        logger.critical("helm install failed")
         logger.critical(f"{helm.stderr}")
-        raise ValueError("helm install failed")
     else:
         logger.info("helm install OK")
 
@@ -257,7 +265,7 @@ def helm_uninstall(release_name: str, namespace: K8SNamespace) -> None:
     helm: subprocess.CompletedProcess = subprocess.run(cmd)
 
     if helm.returncode != 0:
+        logger.critical("helm uninstall failed")
         logger.critical(f"{helm.stderr}")
-        raise ValueError("helm uninstall failed")
     else:
         logger.info("helm uninstall OK")
