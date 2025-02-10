@@ -1,66 +1,76 @@
-[tool.poetry]
-name = "pyvatti"
-version = "2.0.1"
-description = "A job submitter for the INTERVENE platform"
-authors = ["Benjamin Wingfield <bwingfield@ebi.ac.uk>"]
-license = "Apache-2.0"
+[project]
+name = "hattivatti"
+version = "2.1.0"
+description = "A job submitter for GeneticScores.org"
+license = {text = "Apache License (2.0)"}
+authors = [
+    {name = "Benjamin Wingfield", email = "bwingfield@ebi.ac.uk"},
+]
 readme = "README.md"
-packages = [
-    { include = "pyvatti", from = "src" },
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Console",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3"
 ]
 
-[tool.poetry.dependencies]
-python = "^3.12"
-transitions = "^0.9.2"
-google-cloud-storage = "^2.18.2"
-pydantic-settings = "^2.2.1"
-schedule = "^1.2.2"
-httpx = "^0.27.2"
-pydantic = "^2.9.2"
-pyyaml = "^6.0.2"
-kafka-python-ng = "^2.2.3"
+requires-python = ">=3.12"
 
-[tool.poetry.group.dev.dependencies]
-pytest = "^8.1.1"
-mypy = "^1.12.0"
-types-pyyaml = "^6.0.12.20240917"
+dependencies = [
+    "google-cloud-storage>=3.0.0",
+    "httpx>=0.28.1",
+    "kafka-python-ng>=2.2.3",
+    "pydantic>=2.10.6",
+    "pydantic-settings>=2.7.1",
+    "pyyaml>=6.0.2",
+    "schedule>=1.2.2",
+    "transitions>=0.9.2",
+]
 
-[tool.poetry.scripts]
-pyvatti-render = "pyvatti.cli.render:main"
+[project.scripts]
 pyvatti = "pyvatti.main:main"
 
+[dependency-groups]
+lint = [
+    "ruff>=0.9.4",
+    "mypy>=1.14.1",
+    "types-pyyaml>=6.0.12"
+    ]
+test = [
+    "pytest>=8.3.4",
+    "pytest-coverage>=0.0",
+]
+
 [build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+requires = ["setuptools", "setuptools-scm"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
 
 [tool.pytest.ini_options]
-minversion = "6.0"
-addopts = "-ra -q --doctest-modules"
-filterwarnings = ["error"]
+minversion = "8.0"
+addopts = "--doctest-modules"
+pythonpath = [
+  "src"
+]
+
+[tool.coverage.run]
+source = ["src/pyvatti", "tests"]
+concurrency = ["multiprocessing"]
+parallel = true
+sigterm = true
+
+[tool.uv]
+default-groups = ["test", "lint"]
 
 [tool.mypy]
-# Specifies the files or directories to check
-files = "src/**/*.py"
-exclude = "tests"
-
-# Options to control the level of type checking
+files = ["src/**/*.py"]
 warn_unused_configs = true
-ignore_missing_imports = false
-follow_imports = "skip"
-disallow_untyped_calls = true
+ignore_missing_imports = true
+follow_imports = "silent"
+disallow_untyped_calls = false
 disallow_incomplete_defs = true
-check_untyped_defs = true
-disallow_untyped_defs = true
-strict_optional = true
-implicit_reexport = true
-plugins = ["pydantic.mypy"]
-
-
-[[tool.mypy.overrides]]
-module = "google.cloud"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "kafka"
-ignore_missing_imports = true
 
