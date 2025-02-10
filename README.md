@@ -1,5 +1,9 @@
 # hattivatti
 
+> "Hattifatteners (Finnish: hattivatti) are mysterious creatures whose only motivation in life is to keep moving towards the horizon."
+
+<hr />
+
 `hattivatti` is a job submission service for the INTERVENE platform. For each requested job instance it configures compute resources to:
 
 * transfer and decrypt on the fly data to a secure area (i.e. a bucket)
