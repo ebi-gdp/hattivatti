@@ -1,28 +1,24 @@
-
-FROM python:3.12-slim-bullseye
+FROM python:3.12-slim-bullseye as build
 
 ARG TARGETARCH
 
-ENV POETRY_NO_INTERACTION=1 \
-    POETRY_VIRTUALENVS_IN_PROJECT=1 \
-    POETRY_VIRTUALENVS_CREATE=1 \
-    POETRY_CACHE_DIR=/tmp/poetry_cache
-
-WORKDIR /app/
-
-RUN pip install poetry
+RUN pip install nox uv 
 
 COPY pyvatti/ /app/pyvatti
 
-WORKDIR /app/pyvatti/
+WORKDIR /app/pyvatti 
 
-RUN poetry install && rm -rf $POETRY_CACHE_DIR
+RUN nox -s build
+
+FROM python:3.12-slim-bullseye
+
+COPY --from=build /app/pyvatti/dist/hattivatti-2.1.0-py3-none-any.whl /tmp/
+
+RUN pip install /tmp/hattivatti-2.1.0-py3-none-any.whl
 
 ADD pyvatti/helmvatti /opt/helmvatti
 
 ENV HELM_CHART_PATH=/opt/helmvatti
-
-WORKDIR /tmp
 
 RUN apt-get update \
  && apt-get install -y curl \
@@ -32,6 +28,4 @@ RUN apt-get update \
  && rm /tmp/* \
  && apt-get -y clean
 
-WORKDIR /app/pyvatti
-
-CMD ["poetry", "run", "pyvatti"]
+CMD ["pyvatti"]
