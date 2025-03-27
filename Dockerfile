@@ -8,15 +8,15 @@ COPY pyvatti/ /app/pyvatti
 
 WORKDIR /app/pyvatti 
 
-RUN nox -s build
+RUN rm -r /app/pyvatti/dist && nox -s build
 
 FROM python:3.12-slim-bullseye
 
 ARG TARGETARCH
 
-COPY --from=build /app/pyvatti/dist/hattivatti-2.1.0-py3-none-any.whl /tmp/
+COPY --from=build /app/pyvatti/dist/hattivatti-*.whl /tmp/
 
-RUN pip install /tmp/hattivatti-2.1.0-py3-none-any.whl
+RUN pip install /tmp/hattivatti-*.whl
 
 ADD pyvatti/helmvatti /opt/helmvatti
 
