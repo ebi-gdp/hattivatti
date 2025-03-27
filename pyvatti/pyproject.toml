@@ -1,6 +1,6 @@
 [project]
 name = "hattivatti"
-version = "2.1.0"
+version = "2.1.1"
 description = "A job submitter for GeneticScores.org"
 license = {text = "Apache License (2.0)"}
 authors = [
