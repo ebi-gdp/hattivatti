@@ -85,6 +85,12 @@ data:
 
     wave {
       enabled = {{ .Values.nxfParams.wave | default true }}
+      mirror = false
+      freeze = true
+      build {
+        repository = "dockerhub.ebi.ac.uk/gdp-public/wave/wave-build"
+        cacheRepository = "dockerhub.ebi.ac.uk/gdp-public/wave/wave-cache"
+      }
     }
 
     fusion {
