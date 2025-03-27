@@ -8,7 +8,7 @@ COPY pyvatti/ /app/pyvatti
 
 WORKDIR /app/pyvatti 
 
-RUN rm -r /app/pyvatti/dist && nox -s build
+RUN rm -rf /app/pyvatti/dist && nox -s build
 
 FROM python:3.12-slim-bullseye
 
